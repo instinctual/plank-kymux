@@ -24,7 +24,7 @@ use crate::{
     SendStreamDriver,
 };
 
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -174,7 +174,12 @@ impl QuinnConnectionDriver {
         transport_config.keep_alive_interval(options.keep_alive_interval);
         config.transport_config(Arc::new(transport_config));
 
-        let bind_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0);
+        let bind_ip_addr = match &addr {
+            SocketAddr::V4(_) => IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+            SocketAddr::V6(_) => IpAddr::V6(Ipv6Addr::UNSPECIFIED),
+        };
+
+        let bind_addr = SocketAddr::new(bind_ip_addr, 0);
         let endpoint = quinn::Endpoint::client(bind_addr)?;
         let conn = endpoint.connect_with(config, addr, server_name)?.await?;
         Ok(conn.into())
