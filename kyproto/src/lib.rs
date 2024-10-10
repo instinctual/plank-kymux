@@ -9,6 +9,7 @@ use router::{KyChannel, Router};
 use async_trait::async_trait;
 use kyutil::*;
 
+pub use auth::{ClientAuth, UnauthenticatedConnection};
 #[cfg(all(
     any(feature = "kynet-quinn", feature = "kynet-wtransport"),
     not(target_family = "wasm")
@@ -23,10 +24,11 @@ pub use kyutil::DecodeHexError;
 pub use protocol::clock_sync::{ClockSyncClientProtocol, ClockSyncServerProtocol};
 pub use protocol::{AudioProtocol, ProtocolRecv, ProtocolSend, VideoProtocol};
 
-pub use kynet::error::ConnectionError;
+pub use kynet::error::{ConnectionError, ReadExactError};
 pub use kynet::init_crypto;
 pub use kynet::ConnectionStats;
 
+mod auth;
 pub mod clock;
 mod connection;
 mod control;
@@ -372,6 +374,42 @@ impl Connection {
         Ok(Self::new(conn, router, control, INITIATOR_CLIENT))
     }
 
+    async fn connect_with_auth(
+        conn: kynet::Connection,
+        auth: &ClientAuth,
+    ) -> Result<Self, ConnectionError> {
+        let (mut tx, mut rx) = conn.open_bi().await?;
+
+        // Send auth
+        assert!(auth.token().len() <= auth::TOKEN_MAX_LEN);
+        let buf = rmp_serde::to_vec(&auth).expect("Failed to serialize ClientAuth");
+        let len = u16::try_from(buf.len()).expect("ClientAuth too big");
+
+        tx.write_all(&len.to_be_bytes())
+            .await
+            .map_err(|_| ConnectionError("Could not write auth ClientAuth size".to_string()))?;
+
+        tx.write_all(&buf)
+            .await
+            .map_err(|_| ConnectionError("Could not write ClientAuth".to_string()))?;
+
+        // The server writes 1 byte to confirm authentication, or closes the connection on failure
+        rx.read(&mut [0])
+            .await
+            .map_err(|_| ConnectionError("Authentication confirmation failed".to_string()))?;
+
+        let control = Control::start(tx, rx);
+        let router = Router::start(conn.clone());
+        Ok(Self {
+            conn,
+            router,
+            control,
+            initiator: INITIATOR_CLIENT,
+            next_endpoint_index: AtomicU16::new(0),
+            protocol_stats: KyArc::new(KyMutex::new(ProtocolStats::default())),
+        })
+    }
+
     pub async fn accept(conn: kynet::Connection) -> Result<Self, ConnectionError> {
         let (tx, mut rx) = conn.accept_bi().await?;
 
@@ -385,6 +423,35 @@ impl Connection {
         Ok(Self::new(conn, router, control, INITIATOR_SERVER))
     }
 
+    pub async fn accept_with_auth(
+        conn: kynet::Connection,
+    ) -> Result<UnauthenticatedConnection, ConnectionError> {
+        let (tx, mut rx) = conn.accept_bi().await?;
+
+        let mut buf = [0u8; std::mem::size_of::<u16>()];
+        rx.read_exact(&mut buf)
+            .await
+            .map_err(|_| ConnectionError("Failed to read ClientAuth size".to_string()))?;
+
+        let len = u16::from_be_bytes(buf);
+        if len as usize > auth::TOKEN_MAX_LEN {
+            auth::reject_authentication(&conn);
+            return Err(ConnectionError(
+                "ClientAuth size too big. Reject it".to_string(),
+            ));
+        }
+
+        let mut buf = vec![0u8; len as usize];
+        rx.read_exact(&mut buf)
+            .await
+            .map_err(|_| ConnectionError("Failed to read ClientAuth".to_string()))?;
+
+        let auth = rmp_serde::from_slice(&buf)
+            .map_err(|_| ConnectionError("Failed to deserialize ClientAuth".to_string()))?;
+
+        Ok(UnauthenticatedConnection::new(conn, auth, tx, rx))
+    }
+
     #[cfg(all(feature = "kynet-quinn", not(target_family = "wasm")))]
     pub async fn quinn_connect(
         addr: SocketAddr,
@@ -394,6 +461,18 @@ impl Connection {
     ) -> Result<Self, ConnectionError> {
         let conn = kynet::Connection::quinn_connect(addr, server_name, certs, options).await?;
         Self::connect(conn).await
+    }
+
+    #[cfg(all(feature = "kynet-quinn", not(target_family = "wasm")))]
+    pub async fn quinn_connect_with_auth(
+        addr: SocketAddr,
+        server_name: &str,
+        certs: Option<cert::RootCertStore>,
+        options: &quinn::QuinnClientOptions,
+        auth: &ClientAuth,
+    ) -> Result<Self, ConnectionError> {
+        let conn = kynet::Connection::quinn_connect(addr, server_name, certs, options).await?;
+        Self::connect_with_auth(conn, auth).await
     }
 
     #[cfg(all(feature = "kynet-quinn", not(target_family = "wasm")))]
@@ -425,6 +504,16 @@ impl Connection {
         Self::connect(conn).await
     }
 
+    #[cfg(all(feature = "kynet-webtransport-js", target_family = "wasm"))]
+    pub async fn webtransport_js_connect_with_auth(
+        url: &str,
+        options: &webtransport_js::WebTransportJSOptions,
+        auth: &ClientAuth,
+    ) -> Result<Self, ConnectionError> {
+        let conn = kynet::Connection::webtransport_js_connect(url, options).await?;
+        Self::connect_with_auth(conn, auth).await
+    }
+
     #[cfg(all(feature = "kynet-wtransport", not(target_family = "wasm")))]
     pub async fn wtransport_connect(
         url: &str,
@@ -433,6 +522,17 @@ impl Connection {
     ) -> Result<Self, ConnectionError> {
         let conn = kynet::Connection::wtransport_connect(url, certs, options).await?;
         Self::connect(conn).await
+    }
+
+    #[cfg(all(feature = "kynet-wtransport", not(target_family = "wasm")))]
+    pub async fn wtransport_connect_with_auth(
+        url: &str,
+        certs: Option<cert::RootCertStore>,
+        options: &wtransport::WTransportClientOptions,
+        auth: &ClientAuth,
+    ) -> Result<Self, ConnectionError> {
+        let conn = kynet::Connection::wtransport_connect(url, certs, options).await?;
+        Self::connect_with_auth(conn, auth).await
     }
 
     #[cfg(all(feature = "kynet-wtransport", not(target_family = "wasm")))]

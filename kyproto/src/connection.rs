@@ -1,6 +1,7 @@
 #[cfg(all(feature = "kynet-webtransport-js", target_family = "wasm"))]
 pub use kynet::webtransport_js;
 
+use crate::auth::UnauthenticatedConnection;
 use crate::{Connection, ConnectionError};
 use async_trait::async_trait;
 
@@ -9,6 +10,8 @@ use async_trait::async_trait;
 pub trait Server: Send + Sync {
     async fn accept(&self) -> Result<Connection, ConnectionError>;
 
+    async fn accept_with_auth(&self) -> Result<UnauthenticatedConnection, ConnectionError>;
+
     fn close(&self, error_code: u32, reason: &str);
 
     async fn wait_idle(&self);
@@ -16,6 +19,7 @@ pub trait Server: Send + Sync {
 
 #[cfg(all(feature = "kynet-quinn", not(target_family = "wasm")))]
 pub mod quinn {
+    use crate::auth::UnauthenticatedConnection;
     use crate::Connection;
 
     use async_trait::async_trait;
@@ -60,6 +64,12 @@ pub mod quinn {
             Ok(kyproto)
         }
 
+        async fn accept_with_auth(&self) -> Result<UnauthenticatedConnection, ConnectionError> {
+            let conn = self.0.accept().await?;
+            let unauth_kyproto = Connection::accept_with_auth(conn).await?;
+            Ok(unauth_kyproto)
+        }
+
         fn close(&self, error_code: u32, reason: &str) {
             self.0.close(error_code, reason);
         }
@@ -72,6 +82,7 @@ pub mod quinn {
 
 #[cfg(all(feature = "kynet-wtransport", not(target_family = "wasm")))]
 pub mod wtransport {
+    use crate::auth::UnauthenticatedConnection;
     use crate::Connection;
 
     use async_trait::async_trait;
@@ -115,6 +126,12 @@ pub mod wtransport {
             let conn = self.0.accept().await?;
             let kyproto = Connection::accept(conn).await?;
             Ok(kyproto)
+        }
+
+        async fn accept_with_auth(&self) -> Result<UnauthenticatedConnection, ConnectionError> {
+            let conn = self.0.accept().await?;
+            let unauth_kyproto = Connection::accept_with_auth(conn).await?;
+            Ok(unauth_kyproto)
         }
 
         fn close(&self, error_code: u32, reason: &str) {
