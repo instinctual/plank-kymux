@@ -117,6 +117,24 @@ impl IPCForwardableConnection {
         Ok(uri)
     }
 
+    pub async fn register_and_forward_data_endpoint(
+        &mut self,
+        id: Option<u16>,
+    ) -> Result<(u16, String)> {
+        let endpoint = self.inner.register_data_endpoint(id).await?;
+        let id = endpoint.id();
+
+        let uri = self.ipc.register_and_forward(endpoint)?;
+        Ok((id, uri))
+    }
+
+    pub fn connect_and_forward_data_endpoint(&mut self, id: u16) -> Result<String> {
+        let endpoint = self.inner.connect_data_endpoint(id)?;
+
+        let uri = self.ipc.register_and_forward(endpoint)?;
+        Ok(uri)
+    }
+
     pub async fn register_and_forward_input_endpoint(
         &mut self,
         id: Option<u16>,

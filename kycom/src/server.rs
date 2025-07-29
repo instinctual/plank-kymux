@@ -306,6 +306,19 @@ impl Forwarder for TcpForwarder<kyproto::AudioServerEndpoint> {
 }
 
 #[async_trait]
+impl Forwarder for TcpForwarder<kyproto::DataEndpoint> {
+    async fn forward(self) -> Result<(), ProtocolError> {
+        let (tcp_stream, (protocol_send, protocol_recv)) = self.start().await?;
+        let (ipc_send, ipc_recv) = ipc::create_bi_protocol(
+            tcp_stream,
+            serial::data::DataPacketSerializer,
+            serial::data::DataPacketDeserializer,
+        );
+        forward_protocol_bi(protocol_send, protocol_recv, ipc_send, ipc_recv).await
+    }
+}
+
+#[async_trait]
 impl Forwarder for TcpForwarder<kyproto::InputEndpoint> {
     async fn forward(self) -> Result<(), ProtocolError> {
         let (tcp_stream, (protocol_send, protocol_recv)) = self.start().await?;

@@ -15,10 +15,11 @@ mod server;
 
 #[cfg(feature = "client")]
 pub use client::{
-    InputEndpoint, MetricsClientEndpoint, MetricsServerEndpoint, VideoClientEndpoint,
+    DataEndpoint, InputEndpoint, MetricsClientEndpoint, MetricsServerEndpoint, VideoClientEndpoint,
     VideoServerEndpoint,
 };
 pub use kyproto_types::av::*;
+pub use kyproto_types::data::*;
 pub use kyproto_types::input::*;
 pub use kyproto_types::metrics::*;
 pub use kyproto_types::*;

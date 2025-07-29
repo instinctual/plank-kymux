@@ -2,6 +2,7 @@ use crate::{ipc, serial, KyComAddr};
 
 use async_trait::async_trait;
 use kyproto_types::av::*;
+use kyproto_types::data::*;
 use kyproto_types::input::*;
 use kyproto_types::metrics::*;
 use kyproto_types::{ProtocolEndpoint, ProtocolError, ProtocolRecv, ProtocolSend};
@@ -69,6 +70,37 @@ impl ProtocolEndpoint for VideoServerEndpoint {
     async fn ready(mut self) -> Result<Self::Protocol, ProtocolError> {
         ready(&mut self.tcp_stream, self.addr.endpoint_id).await?;
         let ipc = ipc::create_send_protocol(self.tcp_stream, serial::av::AVPacketSerializer);
+        Ok(ipc)
+    }
+}
+
+pub struct DataEndpoint {
+    addr: KyComAddr,
+    tcp_stream: TcpStream,
+}
+
+impl DataEndpoint {
+    pub async fn connect(addr: KyComAddr) -> std::io::Result<Self> {
+        let tcp_stream = TcpStream::connect(addr.addr).await?;
+        Ok(Self { addr, tcp_stream })
+    }
+}
+
+#[async_trait]
+impl ProtocolEndpoint for DataEndpoint {
+    type Protocol = (ProtocolSend<DataPacket>, ProtocolRecv<DataPacket>);
+
+    fn id(&self) -> u16 {
+        self.addr.endpoint_id
+    }
+
+    async fn ready(mut self) -> Result<Self::Protocol, ProtocolError> {
+        ready(&mut self.tcp_stream, self.addr.endpoint_id).await?;
+        let ipc = ipc::create_bi_protocol(
+            self.tcp_stream,
+            serial::data::DataPacketSerializer,
+            serial::data::DataPacketDeserializer,
+        );
         Ok(ipc)
     }
 }

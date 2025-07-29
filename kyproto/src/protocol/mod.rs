@@ -1,4 +1,4 @@
-#![allow(unused)] // TODO remove
+#![allow(unused)]
 
 use crate::protocol::driver::{ProtocolRecvDriver, ProtocolSendDriver};
 use crate::router::KyChannel;
@@ -8,6 +8,7 @@ use kyproto_types::av::{
     AVPacket, AVPacketHeader, CodecPacket, CodecPacketHeader, HolePacket, HolePacketHeader,
     MediaPacket, MediaPacketHeader,
 };
+use kyproto_types::data::DataPacket;
 use kyproto_types::input::InputPacket;
 use kyproto_types::metrics::MetricsPacket;
 pub use kyproto_types::{ProtocolRecv, ProtocolSend};
@@ -163,6 +164,21 @@ pub(crate) async fn start_audio_protocol_recv(
     };
 
     Ok(protocol)
+}
+
+pub(crate) async fn start_data_protocol(
+    ky_channel: KyChannel,
+) -> Result<(ProtocolSend<DataPacket>, ProtocolRecv<DataPacket>), ProtocolError> {
+    let (ky_channel_recv, ky_channel_send) = ky_channel.into_split();
+
+    let protocol_send = ProtocolSend::new(
+        driver::data::reliable::ReliableProtocolSendDriver::start(ky_channel_send).await?,
+    );
+    let protocol_recv = ProtocolRecv::new(
+        driver::data::reliable::ReliableProtocolRecvDriver::start(ky_channel_recv).await?,
+    );
+
+    Ok((protocol_send, protocol_recv))
 }
 
 pub(crate) async fn start_input_protocol(

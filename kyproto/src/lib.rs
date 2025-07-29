@@ -15,6 +15,7 @@ use kyutil::*;
 ))]
 pub use connection::Server;
 pub use kyproto_types::av::*;
+pub use kyproto_types::data::*;
 pub use kyproto_types::input::*;
 pub use kyproto_types::metrics::*;
 pub use kyproto_types::*;
@@ -172,6 +173,30 @@ impl ProtocolEndpoint for AudioClientEndpoint {
             &self.protocol_stats,
         )
         .await
+    }
+}
+
+pub struct DataEndpoint {
+    id: u16,
+    ready_notifier: ReadyNotifier,
+    ky_channel: KyChannel,
+}
+
+#[cfg_attr(target_family = "wasm", async_trait(?Send))]
+#[cfg_attr(not(target_family = "wasm"), async_trait)]
+impl ProtocolEndpoint for DataEndpoint {
+    type Protocol = (ProtocolSend<DataPacket>, ProtocolRecv<DataPacket>);
+
+    fn id(&self) -> u16 {
+        self.id
+    }
+
+    async fn ready(self) -> Result<Self::Protocol, ProtocolError> {
+        self.ready_notifier
+            .ready()
+            .await
+            .map_err(ProtocolError::new)?;
+        protocol::start_data_protocol(self.ky_channel).await
     }
 }
 
@@ -532,6 +557,42 @@ impl Connection {
             ky_channel,
             audio_protocol,
             protocol_stats,
+        };
+        Ok(endpoint)
+    }
+
+    pub async fn register_data_endpoint(
+        &self,
+        id: Option<u16>,
+    ) -> Result<DataEndpoint, ProtocolError> {
+        let id = self.get_endpoint_id(id);
+        let ready_notifier = self
+            .control
+            .register_ready_notifier(id)
+            .map_err(ProtocolError::new)?;
+        self.control
+            .register_endpoint(id)
+            .await
+            .map_err(ProtocolError::new)?;
+        let ky_channel = self.router.register(id).map_err(ProtocolError::new)?;
+        let endpoint = DataEndpoint {
+            id,
+            ready_notifier,
+            ky_channel,
+        };
+        Ok(endpoint)
+    }
+
+    pub fn connect_data_endpoint(&self, id: u16) -> Result<DataEndpoint, ProtocolError> {
+        let ready_notifier = self
+            .control
+            .register_ready_notifier(id)
+            .map_err(ProtocolError::new)?;
+        let ky_channel = self.router.register(id).map_err(ProtocolError::new)?;
+        let endpoint = DataEndpoint {
+            id,
+            ready_notifier,
+            ky_channel,
         };
         Ok(endpoint)
     }
