@@ -348,6 +348,17 @@ pub struct Connection {
 }
 
 impl Connection {
+    fn new(conn: kynet::Connection, router: Router, control: Control, initiator: u16) -> Self {
+        Self {
+            conn,
+            router,
+            control,
+            initiator,
+            next_endpoint_index: AtomicU16::new(0),
+            protocol_stats: KyArc::new(KyMutex::new(ProtocolStats::default())),
+        }
+    }
+
     pub async fn connect(conn: kynet::Connection) -> Result<Self, ConnectionError> {
         let (mut tx, rx) = conn.open_bi().await?;
 
@@ -358,14 +369,7 @@ impl Connection {
 
         let control = Control::start(tx, rx);
         let router = Router::start(conn.clone());
-        Ok(Self {
-            conn,
-            router,
-            control,
-            initiator: INITIATOR_CLIENT,
-            next_endpoint_index: AtomicU16::new(0),
-            protocol_stats: KyArc::new(KyMutex::new(ProtocolStats::default())),
-        })
+        Ok(Self::new(conn, router, control, INITIATOR_CLIENT))
     }
 
     pub async fn accept(conn: kynet::Connection) -> Result<Self, ConnectionError> {
@@ -378,14 +382,7 @@ impl Connection {
 
         let control = Control::start(tx, rx);
         let router = Router::start(conn.clone());
-        Ok(Self {
-            conn,
-            router,
-            control,
-            initiator: INITIATOR_SERVER,
-            next_endpoint_index: AtomicU16::new(0),
-            protocol_stats: KyArc::new(KyMutex::new(ProtocolStats::default())),
-        })
+        Ok(Self::new(conn, router, control, INITIATOR_SERVER))
     }
 
     #[cfg(all(feature = "kynet-quinn", not(target_family = "wasm")))]
