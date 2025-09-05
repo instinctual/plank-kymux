@@ -65,6 +65,8 @@ impl WTransportConnectionDriver {
         };
         tls_config.alpn_protocols = vec![wtransport_proto::WEBTRANSPORT_ALPN.to_vec()];
 
+        // with_bind_default() enables dual-stack
+        // Ref: https://docs.rs/wtransport/0.6.1/wtransport/config/struct.ClientConfigBuilder.html#method.with_bind_default
         let config = wtransport::ClientConfig::builder()
             .with_bind_default()
             .with_custom_tls(tls_config)
