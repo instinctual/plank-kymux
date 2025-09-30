@@ -104,6 +104,11 @@ impl Server {
         Ok(connection)
     }
 
+    pub async fn accept_with_auth(&self) -> Result<kyproto::UnauthenticatedConnection> {
+        let connection = self.inner.accept_with_auth().await?;
+        Ok(connection)
+    }
+
     pub fn close(&self, error_code: u32, reason: &str) {
         self.inner.close(error_code, reason)
     }
@@ -113,7 +118,10 @@ impl Server {
     }
 }
 
-pub async fn connect(config: ClientConfig) -> Result<kyproto::Connection> {
+async fn connect_internal(
+    config: ClientConfig,
+    credentials: Option<&kyproto::ClientAuth>,
+) -> Result<kyproto::Connection> {
     match config {
         #[cfg(feature = "backend-quinn")]
         ClientConfig::Quic {
@@ -121,16 +129,24 @@ pub async fn connect(config: ClientConfig) -> Result<kyproto::Connection> {
             roots,
             server_name,
         } => {
-            let kyproto = kyproto::Connection::quinn_connect(
-                addr,
-                &server_name,
-                roots,
-                &kyproto::quinn::QuinnClientOptions {
-                    keep_alive_interval: Some(KEEP_ALIVE_INTERVAL),
-                    ..Default::default()
-                },
-            )
-            .await?;
+            let options = kyproto::quinn::QuinnClientOptions {
+                keep_alive_interval: Some(KEEP_ALIVE_INTERVAL),
+                ..Default::default()
+            };
+
+            let kyproto = if let Some(credentials) = credentials {
+                kyproto::Connection::quinn_connect_with_auth(
+                    addr,
+                    &server_name,
+                    roots,
+                    &options,
+                    credentials,
+                )
+                .await?
+            } else {
+                kyproto::Connection::quinn_connect(addr, &server_name, roots, &options).await?
+            };
+
             Ok(kyproto)
         }
         #[cfg(feature = "backend-webtransport-js")]
@@ -157,8 +173,25 @@ pub async fn connect(config: ClientConfig) -> Result<kyproto::Connection> {
                 server_certificate_hashes,
             };
 
-            let kyproto = kyproto::Connection::webtransport_js_connect(&url, &options).await?;
+            let kyproto = if let Some(credentials) = credentials {
+                kyproto::Connection::webtransport_js_connect_with_auth(&url, &options, credentials)
+                    .await?
+            } else {
+                kyproto::Connection::webtransport_js_connect(&url, &options).await?
+            };
+
             Ok(kyproto)
         }
     }
+}
+
+pub async fn connect(config: ClientConfig) -> Result<kyproto::Connection> {
+    connect_internal(config, None).await
+}
+
+pub async fn connect_with_auth(
+    config: ClientConfig,
+    credentials: &kyproto::ClientAuth,
+) -> Result<kyproto::Connection> {
+    connect_internal(config, Some(credentials)).await
 }
