@@ -72,9 +72,19 @@ impl<T> ProtocolRecv<T> {
 
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
-pub trait ProtocolEndpoint {
+pub trait ProtocolEndpoint: kyutil::KySend {
     type Protocol;
 
     fn id(&self) -> u16;
-    async fn ready(self) -> Result<Self::Protocol, ProtocolError>;
+
+    // object-safe
+    async fn ready_boxed(self: Box<Self>) -> Result<Self::Protocol, ProtocolError>;
+
+    // convenience helper if the concrete type is known
+    async fn ready(self) -> Result<Self::Protocol, ProtocolError>
+    where
+        Self: Sized + 'static,
+    {
+        Box::new(self).ready_boxed().await
+    }
 }

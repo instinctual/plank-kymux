@@ -65,7 +65,7 @@ impl ProtocolEndpoint for VideoServerEndpoint {
         self.id
     }
 
-    async fn ready(self) -> Result<Self::Protocol, ProtocolError> {
+    async fn ready_boxed(self: Box<Self>) -> Result<Self::Protocol, ProtocolError> {
         self.ready_notifier
             .ready()
             .await
@@ -96,7 +96,7 @@ impl ProtocolEndpoint for VideoClientEndpoint {
         self.id
     }
 
-    async fn ready(self) -> Result<Self::Protocol, ProtocolError> {
+    async fn ready_boxed(self: Box<Self>) -> Result<Self::Protocol, ProtocolError> {
         self.ready_notifier
             .ready()
             .await
@@ -127,7 +127,7 @@ impl ProtocolEndpoint for AudioServerEndpoint {
         self.id
     }
 
-    async fn ready(self) -> Result<Self::Protocol, ProtocolError> {
+    async fn ready_boxed(self: Box<Self>) -> Result<Self::Protocol, ProtocolError> {
         self.ready_notifier
             .ready()
             .await
@@ -158,7 +158,7 @@ impl ProtocolEndpoint for AudioClientEndpoint {
         self.id
     }
 
-    async fn ready(self) -> Result<Self::Protocol, ProtocolError> {
+    async fn ready_boxed(self: Box<Self>) -> Result<Self::Protocol, ProtocolError> {
         self.ready_notifier
             .ready()
             .await
@@ -187,7 +187,7 @@ impl ProtocolEndpoint for DataEndpoint {
         self.id
     }
 
-    async fn ready(self) -> Result<Self::Protocol, ProtocolError> {
+    async fn ready_boxed(self: Box<Self>) -> Result<Self::Protocol, ProtocolError> {
         self.ready_notifier
             .ready()
             .await
@@ -211,7 +211,7 @@ impl ProtocolEndpoint for InputEndpoint {
         self.id
     }
 
-    async fn ready(self) -> Result<Self::Protocol, ProtocolError> {
+    async fn ready_boxed(self: Box<Self>) -> Result<Self::Protocol, ProtocolError> {
         self.ready_notifier
             .ready()
             .await
@@ -235,7 +235,7 @@ impl ProtocolEndpoint for ClockSyncServerEndpoint {
         self.id
     }
 
-    async fn ready(self) -> Result<Self::Protocol, ProtocolError> {
+    async fn ready_boxed(self: Box<Self>) -> Result<Self::Protocol, ProtocolError> {
         self.ready_notifier
             .ready()
             .await
@@ -259,7 +259,7 @@ impl ProtocolEndpoint for ClockSyncClientEndpoint {
         self.id
     }
 
-    async fn ready(self) -> Result<Self::Protocol, ProtocolError> {
+    async fn ready_boxed(self: Box<Self>) -> Result<Self::Protocol, ProtocolError> {
         self.ready_notifier
             .ready()
             .await
@@ -283,7 +283,7 @@ impl ProtocolEndpoint for MetricsServerEndpoint {
         self.id
     }
 
-    async fn ready(self) -> Result<Self::Protocol, ProtocolError> {
+    async fn ready_boxed(self: Box<Self>) -> Result<Self::Protocol, ProtocolError> {
         self.ready_notifier
             .ready()
             .await
@@ -307,7 +307,7 @@ impl ProtocolEndpoint for MetricsClientEndpoint {
         self.id
     }
 
-    async fn ready(self) -> Result<Self::Protocol, ProtocolError> {
+    async fn ready_boxed(self: Box<Self>) -> Result<Self::Protocol, ProtocolError> {
         self.ready_notifier
             .ready()
             .await

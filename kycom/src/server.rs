@@ -95,7 +95,7 @@ impl KyCom {
 
     pub fn forward_async<Endpoint>(&mut self, forwarder: TcpForwarder<Endpoint>) -> KyComAddr
     where
-        Endpoint: kyproto::ProtocolEndpoint + Send + 'static,
+        Endpoint: kyproto::ProtocolEndpoint + 'static,
         TcpForwarder<Endpoint>: Forwarder,
     {
         let addr = forwarder.addr();
@@ -115,7 +115,7 @@ impl KyCom {
         endpoint: Endpoint,
     ) -> std::io::Result<KyComAddr>
     where
-        Endpoint: kyproto::ProtocolEndpoint + Send + 'static,
+        Endpoint: kyproto::ProtocolEndpoint + 'static,
         TcpForwarder<Endpoint>: Forwarder,
     {
         let forwarder = self.register(endpoint)?;
@@ -243,7 +243,7 @@ pub struct TcpForwarder<T: kyproto::ProtocolEndpoint> {
     endpoint: T,
 }
 
-impl<T: kyproto::ProtocolEndpoint> TcpForwarder<T> {
+impl<T: kyproto::ProtocolEndpoint + 'static> TcpForwarder<T> {
     pub fn addr(&self) -> KyComAddr {
         KyComAddr::new(self.addr, self.endpoint.id())
     }
@@ -266,7 +266,7 @@ impl<T: kyproto::ProtocolEndpoint> TcpForwarder<T> {
 
 impl<T> TcpForwarder<T>
 where
-    T: kyproto::ProtocolEndpoint<Protocol = kyproto::ProtocolRecv<kyproto::AVPacket>>,
+    T: kyproto::ProtocolEndpoint<Protocol = kyproto::ProtocolRecv<kyproto::AVPacket>> + 'static,
 {
     async fn forward_client_av_packets(self) -> Result<(), ProtocolError> {
         let (tcp_stream, protocol) = self.start().await?;
@@ -277,7 +277,7 @@ where
 
 impl<T> TcpForwarder<T>
 where
-    T: kyproto::ProtocolEndpoint<Protocol = kyproto::ProtocolSend<kyproto::AVPacket>>,
+    T: kyproto::ProtocolEndpoint<Protocol = kyproto::ProtocolSend<kyproto::AVPacket>> + 'static,
 {
     pub async fn forward_server_av_packets(self) -> Result<(), ProtocolError> {
         let (tcp_stream, protocol) = self.start().await?;

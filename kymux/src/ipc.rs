@@ -23,7 +23,7 @@ impl IpcHandler {
 
     pub fn register_and_forward<Endpoint>(&mut self, endpoint: Endpoint) -> Result<String>
     where
-        Endpoint: ProtocolEndpoint + Send + 'static,
+        Endpoint: ProtocolEndpoint + 'static,
         TcpForwarder<Endpoint>: Forwarder,
     {
         let url = self
