@@ -186,6 +186,15 @@ impl SendStreamDriver for WTransportSendStreamDriver {
             .send
             .reset(wtransport_proto::varint::VarInt::from_u32(0));
     }
+
+    async fn closed(&mut self) -> Result<(), ConnectionError> {
+        self.send
+            .quic_stream_mut()
+            .stopped()
+            .await
+            .map_err(|e| ConnectionError(format!("Stopped error: {e}")))?;
+        Ok(())
+    }
 }
 
 #[derive(Debug)]
@@ -204,6 +213,20 @@ impl RecvStreamDriver for WTransportRecvStreamDriver {
     async fn read(&mut self, buf: &mut [u8]) -> Result<Option<usize>, ReadError> {
         let size = self.recv.read(buf).await?;
         Ok(size)
+    }
+
+    fn stop(&mut self) {
+        // ignore error if the stream is already closed
+        let _ = self.recv.quic_stream_mut().stop(quinn::VarInt::from_u32(0));
+    }
+
+    async fn closed(&mut self) -> Result<(), ConnectionError> {
+        self.recv
+            .quic_stream_mut()
+            .received_reset()
+            .await
+            .map_err(|e| ConnectionError(format!("Stopped error: {e}")))?;
+        Ok(())
     }
 }
 

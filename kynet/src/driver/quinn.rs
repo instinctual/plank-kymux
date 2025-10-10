@@ -289,6 +289,15 @@ impl SendStreamDriver for QuinnSendStreamDriver {
         // ignore error if the stream is already closed
         let _ = self.send.reset(quinn::VarInt::from_u32(0));
     }
+
+    async fn closed(&mut self) -> Result<(), ConnectionError> {
+        // stopped() requires a &mut self
+        self.send
+            .stopped()
+            .await
+            .map_err(|e| ConnectionError(format!("Stopped error: {e}")))?;
+        Ok(())
+    }
 }
 
 #[derive(Debug)]
@@ -307,6 +316,20 @@ impl RecvStreamDriver for QuinnRecvStreamDriver {
     async fn read(&mut self, buf: &mut [u8]) -> Result<Option<usize>, ReadError> {
         let size = self.recv.read(buf).await?;
         Ok(size)
+    }
+
+    fn stop(&mut self) {
+        // ignore error if the stream is already closed
+        let _ = self.recv.stop(quinn::VarInt::from_u32(0));
+    }
+
+    async fn closed(&mut self) -> Result<(), ConnectionError> {
+        // received_reset() requires a &mut self
+        self.recv
+            .received_reset()
+            .await
+            .map_err(|e| ConnectionError(format!("Stopped error: {e}")))?;
+        Ok(())
     }
 }
 

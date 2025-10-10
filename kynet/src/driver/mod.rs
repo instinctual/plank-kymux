@@ -90,6 +90,8 @@ pub trait SendStreamDriver: Debug + KySend + KySync {
     async fn finish(&mut self) -> Result<(), ClosedStreamError>;
 
     fn reset(&mut self);
+
+    async fn closed(&mut self) -> Result<(), ConnectionError>;
 }
 
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
@@ -114,6 +116,10 @@ pub trait RecvStreamDriver: Debug + KySend + KySync {
 
         Ok(())
     }
+
+    fn stop(&mut self);
+
+    async fn closed(&mut self) -> Result<(), ConnectionError>;
 }
 
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]

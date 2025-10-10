@@ -69,6 +69,7 @@ kynet-webtransport-js = [
     "dep:web-sys",
 ]
 kynet-wtransport = [
+    "dep:quinn",
     "dep:wtransport",
     "dep:wtransport-proto",
     "dep:rustls",

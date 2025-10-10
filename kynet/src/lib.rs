@@ -224,6 +224,10 @@ impl SendStream {
     pub fn reset(&mut self) {
         self.driver.reset()
     }
+
+    pub async fn closed(&mut self) -> Result<(), ConnectionError> {
+        self.driver.closed().await
+    }
 }
 
 #[derive(Debug)]
@@ -255,5 +259,13 @@ impl RecvStream {
 
     pub async fn read_exact(&mut self, buf: &mut [u8]) -> Result<(), ReadExactError> {
         self.driver.read_exact(buf).await
+    }
+
+    pub fn stop(&mut self) {
+        self.driver.stop();
+    }
+
+    pub async fn closed(&mut self) -> Result<(), ConnectionError> {
+        self.driver.closed().await
     }
 }

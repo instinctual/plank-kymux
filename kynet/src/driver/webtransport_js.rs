@@ -354,6 +354,12 @@ impl SendStreamDriver for WebTransportJSSendStreamDriver {
             let _ = JsFuture::from(promise).await;
         });
     }
+
+    async fn closed(&mut self) -> Result<(), ConnectionError> {
+        let promise = self.writer.closed();
+        JsFuture::from(promise).await?;
+        Ok(())
+    }
 }
 
 #[derive(Debug)]
@@ -395,6 +401,19 @@ impl RecvStreamDriver for WebTransportJSRecvStreamDriver {
         array.copy_to(&mut buf[..len]);
 
         Ok(Some(len))
+    }
+
+    fn stop(&mut self) {
+        let promise = self.reader.cancel();
+        spawn_local(async move {
+            let _ = JsFuture::from(promise).await;
+        });
+    }
+
+    async fn closed(&mut self) -> Result<(), ConnectionError> {
+        let promise = self.reader.closed();
+        JsFuture::from(promise).await?;
+        Ok(())
     }
 }
 
