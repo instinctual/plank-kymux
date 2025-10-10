@@ -173,7 +173,7 @@ impl ProtocolSendDriver for VideoGopStreamProtocolSendDriver {
                             .map_err(ProtocolError::new)?;
 
                         if let Some(mut old_stream) = self.current_stream.replace(new_stream) {
-                            if let Err(err) = old_stream.close().await {
+                            if let Err(err) = old_stream.finish().await {
                                 warn!("Could not close stream: {err}");
                             }
                         }

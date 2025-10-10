@@ -30,7 +30,7 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use kyutil::*;
 use wasm_bindgen::prelude::*;
-use wasm_bindgen_futures::JsFuture;
+use wasm_bindgen_futures::{spawn_local, JsFuture};
 
 impl From<web_sys::WebTransport> for Connection {
     fn from(value: web_sys::WebTransport) -> Self {
@@ -342,16 +342,17 @@ impl SendStreamDriver for WebTransportJSSendStreamDriver {
         Ok(())
     }
 
-    async fn close(&mut self) -> Result<(), ClosedStreamError> {
+    async fn finish(&mut self) -> Result<(), ClosedStreamError> {
         let promise = self.writer.close();
         JsFuture::from(promise).await?;
         Ok(())
     }
 
-    async fn abort(self: Box<Self>) -> Result<(), ClosedStreamError> {
+    fn reset(&mut self) {
         let promise = self.writer.abort();
-        JsFuture::from(promise).await?;
-        Ok(())
+        spawn_local(async move {
+            let _ = JsFuture::from(promise).await;
+        });
     }
 }
 

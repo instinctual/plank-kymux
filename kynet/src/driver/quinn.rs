@@ -279,16 +279,15 @@ impl SendStreamDriver for QuinnSendStreamDriver {
         Ok(())
     }
 
-    async fn close(&mut self) -> Result<(), ClosedStreamError> {
+    async fn finish(&mut self) -> Result<(), ClosedStreamError> {
         self.send.finish()?;
+        self.send.stopped().await.map_err(|_| ClosedStreamError)?;
         Ok(())
     }
 
-    async fn abort(mut self: Box<Self>) -> Result<(), ClosedStreamError> {
-        // Not async, but the trait requires the method to be async, because
-        // other implementations might abort asynchronously
-        self.send.reset(quinn::VarInt::from_u32(0))?;
-        Ok(())
+    fn reset(&mut self) {
+        // ignore error if the stream is already closed
+        let _ = self.send.reset(quinn::VarInt::from_u32(0));
     }
 }
 
