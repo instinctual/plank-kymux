@@ -5,7 +5,6 @@ resolver = "2"
 members = [
     "kycom",
     "kymux",
-    "kymux_client",
     "kymux-types",
     "kynet",
     "kyproto",
