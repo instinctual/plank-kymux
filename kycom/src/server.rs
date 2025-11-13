@@ -50,6 +50,20 @@ impl KyCom {
         Self::start_on_addr(addr).await
     }
 
+    pub async fn start_on_any_port(local_ports: std::ops::Range<u16>) -> std::io::Result<Self> {
+        for port in local_ports {
+            let kycom = Self::start_on_port(port).await;
+            match kycom {
+                Ok(kycom) => return Ok(kycom),
+                Err(err) => {
+                    warn!("Fail to listen on port {port}: {err:?}");
+                }
+            }
+        }
+
+        Err(std::io::Error::from(std::io::ErrorKind::AddrInUse))
+    }
+
     pub fn register<T>(&self, endpoint: T) -> std::io::Result<TcpForwarder<T>>
     where
         T: kyproto::ProtocolEndpoint,

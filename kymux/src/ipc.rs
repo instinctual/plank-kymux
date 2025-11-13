@@ -11,16 +11,10 @@ pub struct IpcHandler {
 
 impl IpcHandler {
     pub async fn new(local_ports: std::ops::Range<u16>) -> Result<Self> {
-        for port in local_ports {
-            let kycom = kycom::KyCom::start_on_port(port).await;
-            match kycom {
-                Ok(kycom) => return Ok(Self { kycom }),
-                Err(err) => {
-                    log::warn!("Fail to set IpcHandler on port {port}: {err:?}");
-                }
-            }
-        }
-        Err(Error::IpcNoPortAvailable)
+        let kycom = kycom::KyCom::start_on_any_port(local_ports)
+            .await
+            .map_err(|_| Error::IpcNoPortAvailable)?;
+        Ok(Self { kycom })
     }
 
     pub fn stop(self) {
