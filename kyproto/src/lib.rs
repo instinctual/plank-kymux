@@ -808,6 +808,10 @@ impl Connection {
         Ok(endpoint)
     }
 
+    pub fn close(&self) {
+        self.conn.close(0, "Closed by Kyproto user");
+    }
+
     pub async fn closed(&self) -> Result<(), ConnectionError> {
         self.conn.closed().await
     }
