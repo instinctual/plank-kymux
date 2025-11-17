@@ -368,7 +368,7 @@ impl Connection {
         Ok(Self::new(conn, router, control, INITIATOR_CLIENT))
     }
 
-    async fn connect_with_auth(
+    pub async fn connect_with_auth(
         conn: kynet::Connection,
         auth: &ClientAuth,
     ) -> Result<Self, ConnectionError> {
