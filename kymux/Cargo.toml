@@ -12,6 +12,7 @@ tokio = { version = "1.47.1", optional = true }
 
 kycom = { path = "../kycom", optional = true }
 kymux-types = { path = "../kymux-types" }
+kynet = { path = "../kynet", optional = true }
 kyproto = { path = "../kyproto", optional = true }
 
 [dev-dependencies]
@@ -42,14 +43,17 @@ ipc-client = [
 ]
 backend-quinn = [
     "dep:rustls",
+    "kynet/kynet-quinn",
     "kyproto/kynet-quinn",
     "server",
 ]
 backend-wtransport = [
+    "kynet/kynet-wtransport",
     "kyproto/kynet-wtransport",
     "server",
 ]
 backend-webtransport-js = [
+    "kynet/kynet-webtransport-js",
     "kyproto/kynet-webtransport-js",
 ]
 js = [

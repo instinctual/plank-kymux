@@ -9,6 +9,7 @@ pub use error::{Error, Result};
 #[cfg(feature = "ipc")]
 pub use kycom;
 pub use kymux_types as types;
+pub use kynet;
 pub use kyproto;
 
 #[allow(dead_code)]
