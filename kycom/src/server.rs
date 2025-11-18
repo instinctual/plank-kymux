@@ -3,6 +3,7 @@ use crate::serial;
 use crate::KyComAddr;
 
 use async_trait::async_trait;
+use kymux_types as types;
 use kymux_types::ProtocolError;
 #[allow(unused)]
 use log::{debug, error, info, warn};
@@ -64,9 +65,9 @@ impl KyCom {
         Err(std::io::Error::from(std::io::ErrorKind::AddrInUse))
     }
 
-    pub fn register<T>(&self, endpoint: T) -> std::io::Result<TcpForwarder<T>>
+    pub fn register<T>(&self, endpoint: T) -> std::io::Result<TcpForwarder<T::Protocol>>
     where
-        T: kyproto::ProtocolEndpoint,
+        T: types::ProtocolEndpoint + 'static,
     {
         let rx = {
             let endpoint_id = endpoint.id();
@@ -89,14 +90,14 @@ impl KyCom {
         Ok(TcpForwarder {
             addr: self.addr,
             rx,
-            endpoint,
+            endpoint: Box::new(endpoint),
         })
     }
 
-    pub fn forward_async<Endpoint>(&mut self, forwarder: TcpForwarder<Endpoint>) -> KyComAddr
+    pub fn forward_async<P>(&mut self, forwarder: TcpForwarder<P>) -> KyComAddr
     where
-        Endpoint: kyproto::ProtocolEndpoint + 'static,
-        TcpForwarder<Endpoint>: Forwarder,
+        P: 'static,
+        TcpForwarder<P>: Forwarder,
     {
         let addr = forwarder.addr();
 
@@ -115,8 +116,8 @@ impl KyCom {
         endpoint: Endpoint,
     ) -> std::io::Result<KyComAddr>
     where
-        Endpoint: kyproto::ProtocolEndpoint + 'static,
-        TcpForwarder<Endpoint>: Forwarder,
+        Endpoint: types::ProtocolEndpoint + 'static,
+        TcpForwarder<Endpoint::Protocol>: Forwarder,
     {
         let forwarder = self.register(endpoint)?;
         let addr = self.forward_async(forwarder);
@@ -212,8 +213,8 @@ impl Runner {
 }
 
 pub async fn forward_protocol<T>(
-    mut input: kyproto::ProtocolRecv<T>,
-    mut output: kyproto::ProtocolSend<T>,
+    mut input: types::ProtocolRecv<T>,
+    mut output: types::ProtocolSend<T>,
 ) -> Result<(), ProtocolError> {
     while let Some(packet) = input.recv().await? {
         output.send(packet).await?;
@@ -223,10 +224,10 @@ pub async fn forward_protocol<T>(
 }
 
 pub async fn forward_protocol_bi<TX: Send + 'static, RX: Send + 'static>(
-    proto_send: kyproto::ProtocolSend<RX>,
-    proto_recv: kyproto::ProtocolRecv<TX>,
-    ipc_send: kyproto::ProtocolSend<TX>,
-    ipc_recv: kyproto::ProtocolRecv<RX>,
+    proto_send: types::ProtocolSend<RX>,
+    proto_recv: types::ProtocolRecv<TX>,
+    ipc_send: types::ProtocolSend<TX>,
+    ipc_recv: types::ProtocolRecv<RX>,
 ) -> Result<(), ProtocolError> {
     let send_task = tokio::spawn(async move { forward_protocol(ipc_recv, proto_send).await });
     let recv_task = tokio::spawn(async move { forward_protocol(proto_recv, ipc_send).await });
@@ -237,24 +238,24 @@ pub async fn forward_protocol_bi<TX: Send + 'static, RX: Send + 'static>(
     Ok(())
 }
 
-pub struct TcpForwarder<T: kyproto::ProtocolEndpoint> {
+pub struct TcpForwarder<P> {
     addr: SocketAddr,
     rx: oneshot::Receiver<TcpStream>,
-    endpoint: T,
+    endpoint: Box<dyn types::ProtocolEndpoint<Protocol = P>>,
 }
 
-impl<T: kyproto::ProtocolEndpoint + 'static> TcpForwarder<T> {
+impl<P> TcpForwarder<P> {
     pub fn addr(&self) -> KyComAddr {
         KyComAddr::new(self.addr, self.endpoint.id())
     }
 
-    async fn start(self) -> Result<(TcpStream, T::Protocol), ProtocolError> {
+    async fn start(self) -> Result<(TcpStream, P), ProtocolError> {
         let mut tcp_stream = self
             .rx
             .await
             .map_err(|_| ProtocolError::new("TcpStream sender dropped"))?;
 
-        let protocol = self.endpoint.ready().await?;
+        let protocol = self.endpoint.ready_boxed().await?;
         tcp_stream
             .write_all(&[0])
             .await
@@ -264,22 +265,23 @@ impl<T: kyproto::ProtocolEndpoint + 'static> TcpForwarder<T> {
     }
 }
 
-impl<T> TcpForwarder<T>
-where
-    T: kyproto::ProtocolEndpoint<Protocol = kyproto::ProtocolRecv<kyproto::AVPacket>> + 'static,
-{
-    async fn forward_client_av_packets(self) -> Result<(), ProtocolError> {
+#[async_trait]
+pub trait Forwarder {
+    async fn forward(self) -> Result<(), ProtocolError>;
+}
+
+#[async_trait]
+impl Forwarder for TcpForwarder<types::ProtocolRecv<types::AVPacket>> {
+    async fn forward(self) -> Result<(), ProtocolError> {
         let (tcp_stream, protocol) = self.start().await?;
         let ipc = ipc::create_send_protocol(tcp_stream, serial::av::AVPacketSerializer);
         forward_protocol(protocol, ipc).await
     }
 }
 
-impl<T> TcpForwarder<T>
-where
-    T: kyproto::ProtocolEndpoint<Protocol = kyproto::ProtocolSend<kyproto::AVPacket>> + 'static,
-{
-    pub async fn forward_server_av_packets(self) -> Result<(), ProtocolError> {
+#[async_trait]
+impl Forwarder for TcpForwarder<types::ProtocolSend<types::AVPacket>> {
+    async fn forward(self) -> Result<(), ProtocolError> {
         let (tcp_stream, protocol) = self.start().await?;
         let ipc = ipc::create_recv_protocol(tcp_stream, serial::av::AVPacketDeserializer);
         forward_protocol(ipc, protocol).await
@@ -287,53 +289,12 @@ where
 }
 
 #[async_trait]
-pub trait Forwarder {
-    async fn forward(self) -> Result<(), ProtocolError>;
-}
-
-#[async_trait]
-impl Forwarder for TcpForwarder<kyproto::VideoClientEndpoint> {
-    async fn forward(self) -> Result<(), ProtocolError> {
-        self.forward_client_av_packets().await
-    }
-}
-
-#[async_trait]
-impl Forwarder for TcpForwarder<kyproto::VideoServerEndpoint> {
-    async fn forward(self) -> Result<(), ProtocolError> {
-        self.forward_server_av_packets().await
-    }
-}
-
-#[async_trait]
-impl Forwarder for TcpForwarder<kyproto::AudioClientEndpoint> {
-    async fn forward(self) -> Result<(), ProtocolError> {
-        self.forward_client_av_packets().await
-    }
-}
-
-#[async_trait]
-impl Forwarder for TcpForwarder<kyproto::AudioServerEndpoint> {
-    async fn forward(self) -> Result<(), ProtocolError> {
-        self.forward_server_av_packets().await
-    }
-}
-
-#[async_trait]
-impl Forwarder for TcpForwarder<kyproto::DataEndpoint> {
-    async fn forward(self) -> Result<(), ProtocolError> {
-        let (tcp_stream, (protocol_send, protocol_recv)) = self.start().await?;
-        let (ipc_send, ipc_recv) = ipc::create_bi_protocol(
-            tcp_stream,
-            serial::data::DataPacketSerializer,
-            serial::data::DataPacketDeserializer,
-        );
-        forward_protocol_bi(protocol_send, protocol_recv, ipc_send, ipc_recv).await
-    }
-}
-
-#[async_trait]
-impl Forwarder for TcpForwarder<kyproto::InputEndpoint> {
+impl Forwarder
+    for TcpForwarder<(
+        types::ProtocolSend<types::InputPacket>,
+        types::ProtocolRecv<types::InputPacket>,
+    )>
+{
     async fn forward(self) -> Result<(), ProtocolError> {
         let (tcp_stream, (protocol_send, protocol_recv)) = self.start().await?;
         let (ipc_send, ipc_recv) = ipc::create_bi_protocol(
@@ -346,7 +307,25 @@ impl Forwarder for TcpForwarder<kyproto::InputEndpoint> {
 }
 
 #[async_trait]
-impl Forwarder for TcpForwarder<kyproto::MetricsServerEndpoint> {
+impl Forwarder
+    for TcpForwarder<(
+        types::ProtocolSend<types::DataPacket>,
+        types::ProtocolRecv<types::DataPacket>,
+    )>
+{
+    async fn forward(self) -> Result<(), ProtocolError> {
+        let (tcp_stream, (protocol_send, protocol_recv)) = self.start().await?;
+        let (ipc_send, ipc_recv) = ipc::create_bi_protocol(
+            tcp_stream,
+            serial::data::DataPacketSerializer,
+            serial::data::DataPacketDeserializer,
+        );
+        forward_protocol_bi(protocol_send, protocol_recv, ipc_send, ipc_recv).await
+    }
+}
+
+#[async_trait]
+impl Forwarder for TcpForwarder<types::ProtocolSend<types::MetricsPacket>> {
     async fn forward(self) -> Result<(), ProtocolError> {
         let (tcp_stream, protocol) = self.start().await?;
         let ipc = ipc::create_recv_protocol(tcp_stream, serial::metrics::MetricsPacketDeserializer);

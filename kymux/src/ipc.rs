@@ -24,7 +24,7 @@ impl IpcHandler {
     pub fn register_and_forward<Endpoint>(&mut self, endpoint: Endpoint) -> Result<String>
     where
         Endpoint: ProtocolEndpoint + 'static,
-        TcpForwarder<Endpoint>: Forwarder,
+        TcpForwarder<Endpoint::Protocol>: Forwarder,
     {
         let url = self
             .kycom
