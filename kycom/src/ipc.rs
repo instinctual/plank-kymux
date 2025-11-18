@@ -1,6 +1,6 @@
 use crate::serial::{Deserializer, Serializer};
 use async_trait::async_trait;
-use kyproto_types::*;
+use kymux_types::*;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpStream;
 

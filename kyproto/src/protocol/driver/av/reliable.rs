@@ -5,9 +5,9 @@ use crate::ProtocolStats;
 
 use async_trait::async_trait;
 use bytes::BytesMut;
+use kymux_types::av::*;
 use kynet::error::ReadExactError;
 use kynet::{RecvStream, SendStream};
-use kyproto_types::av::*;
 use kyutil::*;
 
 pub(crate) struct ReliableProtocolSendDriver {

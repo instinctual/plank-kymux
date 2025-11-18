@@ -1,7 +1,7 @@
 use super::{Deserializer, Serializer};
 use async_trait::async_trait;
 use bytes::BytesMut;
-use kyproto_types::data::*;
+use kymux_types::data::*;
 use std::io::{ErrorKind, Result};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 

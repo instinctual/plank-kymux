@@ -1,11 +1,11 @@
 use crate::{ipc, serial, KyComAddr};
 
 use async_trait::async_trait;
-use kyproto_types::av::*;
-use kyproto_types::data::*;
-use kyproto_types::input::*;
-use kyproto_types::metrics::*;
-use kyproto_types::{ProtocolEndpoint, ProtocolError, ProtocolRecv, ProtocolSend};
+use kymux_types::av::*;
+use kymux_types::data::*;
+use kymux_types::input::*;
+use kymux_types::metrics::*;
+use kymux_types::{ProtocolEndpoint, ProtocolError, ProtocolRecv, ProtocolSend};
 #[allow(unused)]
 use log::{debug, error, info, warn};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};

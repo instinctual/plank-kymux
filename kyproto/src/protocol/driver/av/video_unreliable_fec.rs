@@ -257,8 +257,8 @@ use std::time::Duration;
 use async_trait::async_trait;
 use byteorder::{BigEndian, ByteOrder};
 use bytes::{Buf, BufMut, Bytes, BytesMut};
+use kymux_types::av::*;
 use kynet::{RecvStream, SendStream};
-use kyproto_types::av::*;
 use kyutil::*;
 #[allow(unused)]
 use log::{debug, error, info, warn};

@@ -1,9 +1,9 @@
 use crate::protocol::ProtocolError;
 
 use bytes::BytesMut;
+use kymux_types::av::*;
 use kynet::error::ReadExactError;
 use kynet::RecvStream;
-use kyproto_types::av::*;
 
 pub(crate) mod audio_unreliable;
 pub(crate) mod audio_unreliable_fec;

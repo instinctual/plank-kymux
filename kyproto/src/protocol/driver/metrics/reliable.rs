@@ -3,9 +3,9 @@ use crate::router::{KyChannel, KyChannelRecv, KyChannelSend};
 
 use async_trait::async_trait;
 use bytes::BytesMut;
+use kymux_types::metrics::*;
 use kynet::error::ReadExactError;
 use kynet::{RecvStream, SendStream};
-use kyproto_types::metrics::*;
 
 pub(crate) struct ReliableProtocolSendDriver {
     ky_channel: KyChannel,

@@ -6,8 +6,8 @@ members = [
     "kycom",
     "kymux",
     "kymux_client",
+    "kymux-types",
     "kynet",
     "kyproto",
-    "kyproto-types",
     "kyutil",
 ]

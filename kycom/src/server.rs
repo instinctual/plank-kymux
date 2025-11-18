@@ -3,7 +3,7 @@ use crate::serial;
 use crate::KyComAddr;
 
 use async_trait::async_trait;
-use kyproto_types::ProtocolError;
+use kymux_types::ProtocolError;
 #[allow(unused)]
 use log::{debug, error, info, warn};
 use std::collections::hash_map::Entry;

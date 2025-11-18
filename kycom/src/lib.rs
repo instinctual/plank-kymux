@@ -18,11 +18,11 @@ pub use client::{
     DataEndpoint, InputEndpoint, MetricsClientEndpoint, MetricsServerEndpoint, VideoClientEndpoint,
     VideoServerEndpoint,
 };
-pub use kyproto_types::av::*;
-pub use kyproto_types::data::*;
-pub use kyproto_types::input::*;
-pub use kyproto_types::metrics::*;
-pub use kyproto_types::*;
+pub use kymux_types::av::*;
+pub use kymux_types::data::*;
+pub use kymux_types::input::*;
+pub use kymux_types::metrics::*;
+pub use kymux_types::*;
 #[cfg(feature = "server")]
 pub use server::{Forwarder, KyCom, TcpForwarder};
 

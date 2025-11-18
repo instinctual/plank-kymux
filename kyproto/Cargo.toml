@@ -13,8 +13,8 @@ doctest = false
 async-trait = "0.1.73"
 byteorder = "1.4.3"
 bytes = "1.4.0"
+kymux-types = { path = "../kymux-types" }
 kynet = { path = "../kynet", optional = true }
-kyproto-types = { path = "../kyproto-types" }
 kyutil = { path = "../kyutil" }
 kywasmtime = { git = "https://github.com/rom1v/kywasmtime.git", tag = "0.1", optional = true }
 log = "0.4.20"

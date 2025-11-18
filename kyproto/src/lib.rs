@@ -15,14 +15,14 @@ pub use auth::{ClientAuth, UnauthenticatedConnection};
     not(target_family = "wasm")
 ))]
 pub use connection::Server;
-pub use kyproto_types::av::*;
-pub use kyproto_types::data::*;
-pub use kyproto_types::input::*;
-pub use kyproto_types::metrics::*;
-pub use kyproto_types::*;
+pub use kymux_types::av::*;
+pub use kymux_types::data::*;
+pub use kymux_types::input::*;
+pub use kymux_types::metrics::*;
+pub use kymux_types::*;
 pub use kyutil::DecodeHexError;
 pub use protocol::clock_sync::{ClockSyncClientProtocol, ClockSyncServerProtocol};
-pub use protocol::{AudioProtocol, ProtocolRecv, ProtocolSend, VideoProtocol};
+pub use protocol::{AudioProtocol, VideoProtocol};
 
 pub use kynet::error::{ConnectionError, ReadExactError};
 pub use kynet::init_crypto;
@@ -51,8 +51,6 @@ pub use connection::webtransport_js;
 
 #[cfg(all(feature = "kynet-wtransport", not(target_family = "wasm")))]
 pub use connection::wtransport;
-
-pub use kyproto_types::ProtocolEndpoint;
 
 pub struct VideoServerEndpoint {
     id: u16,

@@ -4,4 +4,4 @@ pub(crate) mod input;
 pub(crate) mod metrics;
 pub(crate) mod util;
 
-pub(crate) use kyproto_types::{ProtocolRecvDriver, ProtocolSendDriver};
+pub(crate) use kymux_types::{ProtocolRecvDriver, ProtocolSendDriver};

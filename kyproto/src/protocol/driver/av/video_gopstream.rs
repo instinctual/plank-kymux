@@ -70,9 +70,9 @@ use crate::ProtocolStats;
 
 use async_trait::async_trait;
 use byteorder::{BigEndian, ByteOrder, WriteBytesExt};
+use kymux_types::av::*;
 use kynet::error::{ConnectionError, ReadExactError};
 use kynet::{RecvStream, SendStream};
-use kyproto_types::av::*;
 use kyutil::*;
 #[allow(unused)]
 use log::{debug, error, info, warn};
