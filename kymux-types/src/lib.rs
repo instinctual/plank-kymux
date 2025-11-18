@@ -108,3 +108,37 @@ pub trait ProtocolEndpoint: kyutil::KySend {
         Box::new(self).ready_boxed().await
     }
 }
+
+pub struct VideoServerProtocol {
+    pub send: ProtocolSend<AVPacket>,
+}
+
+pub struct VideoClientProtocol {
+    pub recv: ProtocolRecv<AVPacket>,
+}
+
+pub struct AudioServerProtocol {
+    pub send: ProtocolSend<AVPacket>,
+}
+
+pub struct AudioClientProtocol {
+    pub recv: ProtocolRecv<AVPacket>,
+}
+
+pub struct InputProtocol {
+    pub send: ProtocolSend<InputPacket>,
+    pub recv: ProtocolRecv<InputPacket>,
+}
+
+pub struct DataProtocol {
+    pub send: ProtocolSend<DataPacket>,
+    pub recv: ProtocolRecv<DataPacket>,
+}
+
+pub struct MetricsServerProtocol {
+    pub send: ProtocolSend<MetricsPacket>,
+}
+
+pub struct MetricsClientProtocol {
+    pub recv: ProtocolRecv<MetricsPacket>,
+}

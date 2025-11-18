@@ -27,6 +27,7 @@ use control::{Control, ReadyNotifier};
 use router::{KyChannel, Router};
 
 use async_trait::async_trait;
+use kymux_types as types;
 use kyutil::*;
 
 pub use auth::{ClientAuth, UnauthenticatedConnection};
@@ -35,7 +36,7 @@ pub use auth::{ClientAuth, UnauthenticatedConnection};
     not(target_family = "wasm")
 ))]
 pub use connection::Server;
-pub use kymux_types::*;
+pub use kymux_types::{ProtocolEndpoint, ProtocolError};
 pub use kyutil::DecodeHexError;
 pub use protocol::clock_sync::{ClockSyncClientProtocol, ClockSyncServerProtocol};
 pub use protocol::{AudioProtocol, VideoProtocol};
@@ -82,7 +83,7 @@ pub struct VideoServerEndpoint {
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
 impl ProtocolEndpoint for VideoServerEndpoint {
-    type Protocol = ProtocolSend<AVPacket>;
+    type Protocol = types::VideoServerProtocol;
 
     fn id(&self) -> u16 {
         self.id
@@ -93,12 +94,13 @@ impl ProtocolEndpoint for VideoServerEndpoint {
             .ready()
             .await
             .map_err(ProtocolError::new)?;
-        protocol::start_video_protocol_send(
+        let send = protocol::start_video_protocol_send(
             self.ky_channel,
             self.video_protocol,
             &self.protocol_stats,
         )
-        .await
+        .await?;
+        Ok(Self::Protocol { send })
     }
 }
 
@@ -113,7 +115,7 @@ pub struct VideoClientEndpoint {
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
 impl ProtocolEndpoint for VideoClientEndpoint {
-    type Protocol = ProtocolRecv<AVPacket>;
+    type Protocol = types::VideoClientProtocol;
 
     fn id(&self) -> u16 {
         self.id
@@ -124,12 +126,13 @@ impl ProtocolEndpoint for VideoClientEndpoint {
             .ready()
             .await
             .map_err(ProtocolError::new)?;
-        protocol::start_video_protocol_recv(
+        let recv = protocol::start_video_protocol_recv(
             self.ky_channel,
             self.video_protocol,
             &self.protocol_stats,
         )
-        .await
+        .await?;
+        Ok(Self::Protocol { recv })
     }
 }
 
@@ -144,7 +147,7 @@ pub struct AudioServerEndpoint {
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
 impl ProtocolEndpoint for AudioServerEndpoint {
-    type Protocol = ProtocolSend<AVPacket>;
+    type Protocol = types::AudioServerProtocol;
 
     fn id(&self) -> u16 {
         self.id
@@ -155,12 +158,13 @@ impl ProtocolEndpoint for AudioServerEndpoint {
             .ready()
             .await
             .map_err(ProtocolError::new)?;
-        protocol::start_audio_protocol_send(
+        let send = protocol::start_audio_protocol_send(
             self.ky_channel,
             self.audio_protocol,
             &self.protocol_stats,
         )
-        .await
+        .await?;
+        Ok(Self::Protocol { send })
     }
 }
 
@@ -175,7 +179,7 @@ pub struct AudioClientEndpoint {
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
 impl ProtocolEndpoint for AudioClientEndpoint {
-    type Protocol = ProtocolRecv<AVPacket>;
+    type Protocol = types::AudioClientProtocol;
 
     fn id(&self) -> u16 {
         self.id
@@ -186,12 +190,13 @@ impl ProtocolEndpoint for AudioClientEndpoint {
             .ready()
             .await
             .map_err(ProtocolError::new)?;
-        protocol::start_audio_protocol_recv(
+        let recv = protocol::start_audio_protocol_recv(
             self.ky_channel,
             self.audio_protocol,
             &self.protocol_stats,
         )
-        .await
+        .await?;
+        Ok(Self::Protocol { recv })
     }
 }
 
@@ -204,7 +209,7 @@ pub struct DataEndpoint {
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
 impl ProtocolEndpoint for DataEndpoint {
-    type Protocol = (ProtocolSend<DataPacket>, ProtocolRecv<DataPacket>);
+    type Protocol = types::DataProtocol;
 
     fn id(&self) -> u16 {
         self.id
@@ -215,7 +220,8 @@ impl ProtocolEndpoint for DataEndpoint {
             .ready()
             .await
             .map_err(ProtocolError::new)?;
-        protocol::start_data_protocol(self.ky_channel).await
+        let (send, recv) = protocol::start_data_protocol(self.ky_channel).await?;
+        Ok(Self::Protocol { send, recv })
     }
 }
 
@@ -228,7 +234,7 @@ pub struct InputEndpoint {
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
 impl ProtocolEndpoint for InputEndpoint {
-    type Protocol = (ProtocolSend<InputPacket>, ProtocolRecv<InputPacket>);
+    type Protocol = types::InputProtocol;
 
     fn id(&self) -> u16 {
         self.id
@@ -239,7 +245,8 @@ impl ProtocolEndpoint for InputEndpoint {
             .ready()
             .await
             .map_err(ProtocolError::new)?;
-        protocol::start_input_protocol(self.ky_channel).await
+        let (send, recv) = protocol::start_input_protocol(self.ky_channel).await?;
+        Ok(Self::Protocol { send, recv })
     }
 }
 
@@ -300,7 +307,7 @@ pub struct MetricsServerEndpoint {
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
 impl ProtocolEndpoint for MetricsServerEndpoint {
-    type Protocol = ProtocolSend<MetricsPacket>;
+    type Protocol = types::MetricsServerProtocol;
 
     fn id(&self) -> u16 {
         self.id
@@ -311,7 +318,8 @@ impl ProtocolEndpoint for MetricsServerEndpoint {
             .ready()
             .await
             .map_err(ProtocolError::new)?;
-        protocol::start_metrics_protocol_send(self.ky_channel).await
+        let send = protocol::start_metrics_protocol_send(self.ky_channel).await?;
+        Ok(Self::Protocol { send })
     }
 }
 
@@ -324,7 +332,7 @@ pub struct MetricsClientEndpoint {
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
 impl ProtocolEndpoint for MetricsClientEndpoint {
-    type Protocol = ProtocolRecv<MetricsPacket>;
+    type Protocol = types::MetricsClientProtocol;
 
     fn id(&self) -> u16 {
         self.id
@@ -335,7 +343,8 @@ impl ProtocolEndpoint for MetricsClientEndpoint {
             .ready()
             .await
             .map_err(ProtocolError::new)?;
-        protocol::start_metrics_protocol_recv(self.ky_channel).await
+        let recv = protocol::start_metrics_protocol_recv(self.ky_channel).await?;
+        Ok(Self::Protocol { recv })
     }
 }
 ///

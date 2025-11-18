@@ -298,64 +298,72 @@ pub trait Forwarder {
 }
 
 #[async_trait]
-impl Forwarder for TcpForwarder<types::ProtocolRecv<types::AVPacket>> {
+impl Forwarder for TcpForwarder<types::VideoClientProtocol> {
     async fn forward(self) -> Result<(), ProtocolError> {
         let (tcp_stream, protocol) = self.start().await?;
         let ipc = ipc::create_send_protocol(tcp_stream, serial::av::AVPacketSerializer);
-        forward_protocol(protocol, ipc).await
+        forward_protocol(protocol.recv, ipc).await
     }
 }
 
 #[async_trait]
-impl Forwarder for TcpForwarder<types::ProtocolSend<types::AVPacket>> {
+impl Forwarder for TcpForwarder<types::VideoServerProtocol> {
     async fn forward(self) -> Result<(), ProtocolError> {
         let (tcp_stream, protocol) = self.start().await?;
         let ipc = ipc::create_recv_protocol(tcp_stream, serial::av::AVPacketDeserializer);
-        forward_protocol(ipc, protocol).await
+        forward_protocol(ipc, protocol.send).await
     }
 }
 
 #[async_trait]
-impl Forwarder
-    for TcpForwarder<(
-        types::ProtocolSend<types::InputPacket>,
-        types::ProtocolRecv<types::InputPacket>,
-    )>
-{
+impl Forwarder for TcpForwarder<types::AudioClientProtocol> {
     async fn forward(self) -> Result<(), ProtocolError> {
-        let (tcp_stream, (protocol_send, protocol_recv)) = self.start().await?;
+        let (tcp_stream, protocol) = self.start().await?;
+        let ipc = ipc::create_send_protocol(tcp_stream, serial::av::AVPacketSerializer);
+        forward_protocol(protocol.recv, ipc).await
+    }
+}
+
+#[async_trait]
+impl Forwarder for TcpForwarder<types::AudioServerProtocol> {
+    async fn forward(self) -> Result<(), ProtocolError> {
+        let (tcp_stream, protocol) = self.start().await?;
+        let ipc = ipc::create_recv_protocol(tcp_stream, serial::av::AVPacketDeserializer);
+        forward_protocol(ipc, protocol.send).await
+    }
+}
+
+#[async_trait]
+impl Forwarder for TcpForwarder<types::InputProtocol> {
+    async fn forward(self) -> Result<(), ProtocolError> {
+        let (tcp_stream, protocol) = self.start().await?;
         let (ipc_send, ipc_recv) = ipc::create_bi_protocol(
             tcp_stream,
             serial::input::InputPacketSerializer,
             serial::input::InputPacketDeserializer,
         );
-        forward_protocol_bi(protocol_send, protocol_recv, ipc_send, ipc_recv).await
+        forward_protocol_bi(protocol.send, protocol.recv, ipc_send, ipc_recv).await
     }
 }
 
 #[async_trait]
-impl Forwarder
-    for TcpForwarder<(
-        types::ProtocolSend<types::DataPacket>,
-        types::ProtocolRecv<types::DataPacket>,
-    )>
-{
+impl Forwarder for TcpForwarder<types::DataProtocol> {
     async fn forward(self) -> Result<(), ProtocolError> {
-        let (tcp_stream, (protocol_send, protocol_recv)) = self.start().await?;
+        let (tcp_stream, protocol) = self.start().await?;
         let (ipc_send, ipc_recv) = ipc::create_bi_protocol(
             tcp_stream,
             serial::data::DataPacketSerializer,
             serial::data::DataPacketDeserializer,
         );
-        forward_protocol_bi(protocol_send, protocol_recv, ipc_send, ipc_recv).await
+        forward_protocol_bi(protocol.send, protocol.recv, ipc_send, ipc_recv).await
     }
 }
 
 #[async_trait]
-impl Forwarder for TcpForwarder<types::ProtocolSend<types::MetricsPacket>> {
+impl Forwarder for TcpForwarder<types::MetricsServerProtocol> {
     async fn forward(self) -> Result<(), ProtocolError> {
         let (tcp_stream, protocol) = self.start().await?;
         let ipc = ipc::create_recv_protocol(tcp_stream, serial::metrics::MetricsPacketDeserializer);
-        forward_protocol(ipc, protocol).await
+        forward_protocol(ipc, protocol.send).await
     }
 }
