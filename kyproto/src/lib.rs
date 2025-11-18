@@ -15,10 +15,6 @@ pub use auth::{ClientAuth, UnauthenticatedConnection};
     not(target_family = "wasm")
 ))]
 pub use connection::Server;
-pub use kymux_types::av::*;
-pub use kymux_types::data::*;
-pub use kymux_types::input::*;
-pub use kymux_types::metrics::*;
 pub use kymux_types::*;
 pub use kyutil::DecodeHexError;
 pub use protocol::clock_sync::{ClockSyncClientProtocol, ClockSyncServerProtocol};
