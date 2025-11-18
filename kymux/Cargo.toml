@@ -11,6 +11,7 @@ thiserror = "1.0.58"
 tokio = { version = "1.47.1", optional = true }
 
 kycom = { path = "../kycom", optional = true }
+kymux-types = { path = "../kymux-types" }
 kyproto = { path = "../kyproto", optional = true }
 
 [dev-dependencies]
