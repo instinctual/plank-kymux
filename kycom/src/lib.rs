@@ -26,6 +26,7 @@ pub use kymux_types::*;
 #[cfg(feature = "server")]
 pub use server::{Forwarder, KyCom, TcpForwarder};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct KyComAddr {
     pub addr: SocketAddr,
     pub endpoint_id: u16,
