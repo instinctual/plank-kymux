@@ -103,6 +103,7 @@ async fn main() {
         addr: client_addr,
         roots: Some(keys.certs_store),
         server_name: SERVER_NAME.into(),
+        certificate_hash: None,
     };
 
     let client = kymux::connect(client_config);

@@ -41,6 +41,10 @@ pub enum ClientConfig {
         addr: std::net::SocketAddr,
         roots: Option<rustls::RootCertStore>,
         server_name: String,
+        /// SHA-256 hash of the expected server certificate (hex encoded).
+        /// If provided, the server certificate will be validated by comparing its hash
+        /// instead of using CA chain validation.
+        certificate_hash: Option<String>,
     },
     #[cfg(feature = "backend-webtransport-js")]
     WebTransport {
@@ -130,9 +134,11 @@ async fn connect_internal(
             addr,
             roots,
             server_name,
+            certificate_hash,
         } => {
             let options = kyproto::quinn::QuinnClientOptions {
                 keep_alive_interval: Some(KEEP_ALIVE_INTERVAL),
+                certificate_hash,
                 ..Default::default()
             };
 

@@ -77,6 +77,7 @@ async fn create_connection() -> (IPCForwardableConnection, IPCForwardableConnect
             addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), PORT),
             roots: Some(keys.certs_store),
             server_name: SERVER_NAME.into(),
+            certificate_hash: None,
         };
 
         let connection = kymux::connect(config).await.unwrap();
