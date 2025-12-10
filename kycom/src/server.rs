@@ -18,6 +18,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+use crate::connection::{Connection, Server};
 use crate::ipc;
 use crate::serial;
 use crate::KyComAddr;
@@ -30,14 +31,13 @@ use log::{debug, error, info, warn};
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::io::{Error, ErrorKind};
-use std::net::{Ipv4Addr, SocketAddr};
+use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream};
+use tokio::io::AsyncWriteExt;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
-type EndpointMap = HashMap<u16, oneshot::Sender<TcpStream>>;
+type EndpointMap = HashMap<u16, oneshot::Sender<Connection>>;
 
 pub struct KyCom {
     addr: SocketAddr,
@@ -47,42 +47,38 @@ pub struct KyCom {
 }
 
 impl KyCom {
-    pub async fn start_on_addr(addr: SocketAddr) -> std::io::Result<Self> {
-        let pending_endpoints = Arc::new(Mutex::new(HashMap::new()));
+    fn new(server: Server) -> Self {
+        let addr = server.addr;
 
-        let listener = TcpListener::bind(addr).await?;
+        let pending_endpoints = Arc::new(Mutex::new(HashMap::new()));
         let pending_endpoints2 = pending_endpoints.clone();
         let listen_task = tokio::spawn(async move {
-            if let Err(err) = Self::listen(listener, pending_endpoints2).await {
-                error!("TcpListener error: {err}");
+            if let Err(err) = Self::listen(server, pending_endpoints2).await {
+                error!("Kycom server listener error: {err}");
             }
         });
 
-        Ok(Self {
+        Self {
             addr,
             pending_endpoints,
             listen_task,
             runner: None,
-        })
+        }
+    }
+
+    pub async fn start_on_addr(addr: SocketAddr) -> std::io::Result<Self> {
+        let server = Server::start_on_addr(addr).await?;
+        Ok(Self::new(server))
     }
 
     pub async fn start_on_port(port: u16) -> std::io::Result<Self> {
-        let addr = SocketAddr::new(Ipv4Addr::LOCALHOST.into(), port);
-        Self::start_on_addr(addr).await
+        let server = Server::start_on_port(port).await?;
+        Ok(Self::new(server))
     }
 
     pub async fn start_on_any_port(local_ports: std::ops::Range<u16>) -> std::io::Result<Self> {
-        for port in local_ports {
-            let kycom = Self::start_on_port(port).await;
-            match kycom {
-                Ok(kycom) => return Ok(kycom),
-                Err(err) => {
-                    warn!("Fail to listen on port {port}: {err:?}");
-                }
-            }
-        }
-
-        Err(std::io::Error::from(std::io::ErrorKind::AddrInUse))
+        let server = Server::start_on_any_port(local_ports).await?;
+        Ok(Self::new(server))
     }
 
     pub fn register<T>(
@@ -144,38 +140,24 @@ impl KyCom {
     }
 
     async fn listen(
-        listener: TcpListener,
+        mut server: Server,
         pending_endpoints: Arc<Mutex<EndpointMap>>,
     ) -> std::io::Result<()> {
         loop {
-            let (tcp_stream, _) = listener.accept().await?;
-            let pending_endpoints = pending_endpoints.clone();
-            tokio::spawn(async move {
-                if let Err(err) = Self::handle_stream(tcp_stream, pending_endpoints).await {
-                    error!("TcpStream error: {err}");
-                }
-            });
-        }
-    }
+            let connection = server.accept().await?;
+            let endpoint_id = connection.addr.endpoint_id;
 
-    async fn handle_stream(
-        mut tcp_stream: TcpStream,
-        pending_endpoints: Arc<Mutex<EndpointMap>>,
-    ) -> std::io::Result<()> {
-        let endpoint_id = tcp_stream.read_u16().await?;
-        info!("TCP connection for endpoint {endpoint_id:X}");
-        let mut pending_endpoints = pending_endpoints.lock().unwrap();
-        if let Some(tx) = pending_endpoints.remove(&endpoint_id) {
-            // Ignore error (if the receiver is dropped)
-            let _ = tx.send(tcp_stream);
-        } else {
-            return Err(Error::new(
-                ErrorKind::NotFound,
-                format!("Connection received for unknown endpoint id: {endpoint_id:X}"),
-            ));
+            let mut pending_endpoints = pending_endpoints.lock().unwrap();
+            if let Some(tx) = pending_endpoints.remove(&endpoint_id) {
+                // Ignore error (if the receiver is dropped)
+                let _ = tx.send(connection);
+            } else {
+                return Err(Error::new(
+                    ErrorKind::NotFound,
+                    format!("Connection received for unknown endpoint id: {endpoint_id:X}"),
+                ));
+            }
         }
-
-        Ok(())
     }
 
     pub fn stop(mut self) {
@@ -266,7 +248,7 @@ pub async fn forward_protocol_bi<TX: Send + 'static, RX: Send + 'static>(
 
 pub struct TcpForwarder<P> {
     addr: SocketAddr,
-    rx: oneshot::Receiver<TcpStream>,
+    rx: oneshot::Receiver<Connection>,
     endpoint: types::ProtocolEndpoint<P>,
 }
 
@@ -275,19 +257,19 @@ impl<P> TcpForwarder<P> {
         KyComAddr::new(self.addr, self.endpoint.id())
     }
 
-    async fn start(self) -> Result<(TcpStream, P), ProtocolError> {
-        let mut tcp_stream = self
+    async fn start(self) -> Result<(Connection, P), ProtocolError> {
+        let mut connection = self
             .rx
             .await
-            .map_err(|_| ProtocolError::new("TcpStream sender dropped"))?;
+            .map_err(|_| ProtocolError::new("Connection sender dropped"))?;
 
         let protocol = self.endpoint.ready().await?;
-        tcp_stream
+        connection
             .write_all(&[0])
             .await
             .map_err(ProtocolError::new)?;
 
-        Ok((tcp_stream, protocol))
+        Ok((connection, protocol))
     }
 }
 
@@ -299,8 +281,8 @@ pub trait Forwarder {
 #[async_trait]
 impl Forwarder for TcpForwarder<types::VideoClientProtocol> {
     async fn forward(self) -> Result<(), ProtocolError> {
-        let (tcp_stream, protocol) = self.start().await?;
-        let ipc = ipc::create_send_protocol(tcp_stream, serial::av::AVPacketSerializer);
+        let (connection, protocol) = self.start().await?;
+        let ipc = ipc::create_send_protocol(connection, serial::av::AVPacketSerializer);
         forward_protocol(protocol.recv, ipc).await
     }
 }
@@ -308,8 +290,8 @@ impl Forwarder for TcpForwarder<types::VideoClientProtocol> {
 #[async_trait]
 impl Forwarder for TcpForwarder<types::VideoServerProtocol> {
     async fn forward(self) -> Result<(), ProtocolError> {
-        let (tcp_stream, protocol) = self.start().await?;
-        let ipc = ipc::create_recv_protocol(tcp_stream, serial::av::AVPacketDeserializer);
+        let (connection, protocol) = self.start().await?;
+        let ipc = ipc::create_recv_protocol(connection, serial::av::AVPacketDeserializer);
         forward_protocol(ipc, protocol.send).await
     }
 }
@@ -317,8 +299,8 @@ impl Forwarder for TcpForwarder<types::VideoServerProtocol> {
 #[async_trait]
 impl Forwarder for TcpForwarder<types::AudioClientProtocol> {
     async fn forward(self) -> Result<(), ProtocolError> {
-        let (tcp_stream, protocol) = self.start().await?;
-        let ipc = ipc::create_send_protocol(tcp_stream, serial::av::AVPacketSerializer);
+        let (connection, protocol) = self.start().await?;
+        let ipc = ipc::create_send_protocol(connection, serial::av::AVPacketSerializer);
         forward_protocol(protocol.recv, ipc).await
     }
 }
@@ -326,8 +308,8 @@ impl Forwarder for TcpForwarder<types::AudioClientProtocol> {
 #[async_trait]
 impl Forwarder for TcpForwarder<types::AudioServerProtocol> {
     async fn forward(self) -> Result<(), ProtocolError> {
-        let (tcp_stream, protocol) = self.start().await?;
-        let ipc = ipc::create_recv_protocol(tcp_stream, serial::av::AVPacketDeserializer);
+        let (connection, protocol) = self.start().await?;
+        let ipc = ipc::create_recv_protocol(connection, serial::av::AVPacketDeserializer);
         forward_protocol(ipc, protocol.send).await
     }
 }
@@ -335,9 +317,10 @@ impl Forwarder for TcpForwarder<types::AudioServerProtocol> {
 #[async_trait]
 impl Forwarder for TcpForwarder<types::InputProtocol> {
     async fn forward(self) -> Result<(), ProtocolError> {
-        let (tcp_stream, protocol) = self.start().await?;
+        let (connection, protocol) = self.start().await?;
         let (ipc_send, ipc_recv) = ipc::create_bi_protocol(
-            tcp_stream,
+            connection.read,
+            connection.write,
             serial::input::InputPacketSerializer,
             serial::input::InputPacketDeserializer,
         );
@@ -348,9 +331,10 @@ impl Forwarder for TcpForwarder<types::InputProtocol> {
 #[async_trait]
 impl Forwarder for TcpForwarder<types::DataProtocol> {
     async fn forward(self) -> Result<(), ProtocolError> {
-        let (tcp_stream, protocol) = self.start().await?;
+        let (connection, protocol) = self.start().await?;
         let (ipc_send, ipc_recv) = ipc::create_bi_protocol(
-            tcp_stream,
+            connection.read,
+            connection.write,
             serial::data::DataPacketSerializer,
             serial::data::DataPacketDeserializer,
         );
@@ -361,8 +345,8 @@ impl Forwarder for TcpForwarder<types::DataProtocol> {
 #[async_trait]
 impl Forwarder for TcpForwarder<types::MetricsServerProtocol> {
     async fn forward(self) -> Result<(), ProtocolError> {
-        let (tcp_stream, protocol) = self.start().await?;
-        let ipc = ipc::create_recv_protocol(tcp_stream, serial::metrics::MetricsPacketDeserializer);
+        let (connection, protocol) = self.start().await?;
+        let ipc = ipc::create_recv_protocol(connection, serial::metrics::MetricsPacketDeserializer);
         forward_protocol(ipc, protocol.send).await
     }
 }

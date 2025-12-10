@@ -22,7 +22,6 @@ use crate::serial::{Deserializer, Serializer};
 use async_trait::async_trait;
 use kymux_types::*;
 use tokio::io::{AsyncRead, AsyncWrite};
-use tokio::net::TcpStream;
 
 struct IpcSend<T> {
     writer: Box<dyn AsyncWrite + Send + Unpin>,
@@ -105,7 +104,8 @@ where
 }
 
 pub fn create_bi_protocol<TX, RX>(
-    tcp: TcpStream,
+    reader: impl AsyncRead + Send + Unpin + 'static,
+    writer: impl AsyncWrite + Send + Unpin + 'static,
     serializer: impl Serializer<Packet = TX> + Send + 'static,
     deserializer: impl Deserializer<Packet = RX> + Send + 'static,
 ) -> (ProtocolSend<TX>, ProtocolRecv<RX>)
@@ -113,7 +113,6 @@ where
     TX: Send + 'static,
     RX: Send + 'static,
 {
-    let (reader, writer) = tcp.into_split();
     let send = create_send_protocol(writer, serializer);
     let recv = create_recv_protocol(reader, deserializer);
     (send, recv)

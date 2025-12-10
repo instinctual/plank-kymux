@@ -18,6 +18,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+use crate::connection::Connection;
 use crate::{ipc, serial, KyComAddr};
 
 use async_trait::async_trait;
@@ -26,26 +27,25 @@ use kymux_types::ProtocolError;
 #[allow(unused)]
 use log::{debug, error, info, warn};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpStream;
 
-async fn ready(tcp_stream: &mut TcpStream, endpoint_id: u16) -> Result<(), ProtocolError> {
-    tcp_stream
+async fn ready(connection: &mut Connection) -> Result<(), ProtocolError> {
+    let endpoint_id = connection.addr.endpoint_id;
+    connection
         .write_u16(endpoint_id)
         .await
         .map_err(ProtocolError::new)?;
-    tcp_stream.read_u8().await.map_err(ProtocolError::new)?;
+    connection.read_u8().await.map_err(ProtocolError::new)?;
     Ok(())
 }
 
 pub struct VideoClientEndpoint {
-    addr: KyComAddr,
-    tcp_stream: TcpStream,
+    connection: Connection,
 }
 
 impl VideoClientEndpoint {
     pub async fn connect(addr: KyComAddr) -> std::io::Result<Self> {
-        let tcp_stream = TcpStream::connect(addr.addr).await?;
-        Ok(Self { addr, tcp_stream })
+        let connection = Connection::connect(addr).await?;
+        Ok(Self { connection })
     }
 }
 
@@ -54,25 +54,24 @@ impl types::ProtocolEndpointDriver for VideoClientEndpoint {
     type Protocol = types::VideoClientProtocol;
 
     fn id(&self) -> u16 {
-        self.addr.endpoint_id
+        self.connection.addr.endpoint_id
     }
 
     async fn ready_boxed(mut self: Box<Self>) -> Result<Self::Protocol, ProtocolError> {
-        ready(&mut self.tcp_stream, self.addr.endpoint_id).await?;
-        let recv = ipc::create_recv_protocol(self.tcp_stream, serial::av::AVPacketDeserializer);
+        ready(&mut self.connection).await?;
+        let recv = ipc::create_recv_protocol(self.connection, serial::av::AVPacketDeserializer);
         Ok(Self::Protocol { recv })
     }
 }
 
 pub struct VideoServerEndpoint {
-    addr: KyComAddr,
-    tcp_stream: TcpStream,
+    connection: Connection,
 }
 
 impl VideoServerEndpoint {
     pub async fn connect(addr: KyComAddr) -> std::io::Result<Self> {
-        let tcp_stream = TcpStream::connect(addr.addr).await?;
-        Ok(Self { addr, tcp_stream })
+        let connection = Connection::connect(addr).await?;
+        Ok(Self { connection })
     }
 }
 
@@ -81,25 +80,24 @@ impl types::ProtocolEndpointDriver for VideoServerEndpoint {
     type Protocol = types::VideoServerProtocol;
 
     fn id(&self) -> u16 {
-        self.addr.endpoint_id
+        self.connection.addr.endpoint_id
     }
 
     async fn ready_boxed(mut self: Box<Self>) -> Result<Self::Protocol, ProtocolError> {
-        ready(&mut self.tcp_stream, self.addr.endpoint_id).await?;
-        let send = ipc::create_send_protocol(self.tcp_stream, serial::av::AVPacketSerializer);
+        ready(&mut self.connection).await?;
+        let send = ipc::create_send_protocol(self.connection, serial::av::AVPacketSerializer);
         Ok(Self::Protocol { send })
     }
 }
 
 pub struct AudioClientEndpoint {
-    addr: KyComAddr,
-    tcp_stream: TcpStream,
+    connection: Connection,
 }
 
 impl AudioClientEndpoint {
     pub async fn connect(addr: KyComAddr) -> std::io::Result<Self> {
-        let tcp_stream = TcpStream::connect(addr.addr).await?;
-        Ok(Self { addr, tcp_stream })
+        let connection = Connection::connect(addr).await?;
+        Ok(Self { connection })
     }
 }
 
@@ -108,25 +106,24 @@ impl types::ProtocolEndpointDriver for AudioClientEndpoint {
     type Protocol = types::AudioClientProtocol;
 
     fn id(&self) -> u16 {
-        self.addr.endpoint_id
+        self.connection.addr.endpoint_id
     }
 
     async fn ready_boxed(mut self: Box<Self>) -> Result<Self::Protocol, ProtocolError> {
-        ready(&mut self.tcp_stream, self.addr.endpoint_id).await?;
-        let recv = ipc::create_recv_protocol(self.tcp_stream, serial::av::AVPacketDeserializer);
+        ready(&mut self.connection).await?;
+        let recv = ipc::create_recv_protocol(self.connection, serial::av::AVPacketDeserializer);
         Ok(Self::Protocol { recv })
     }
 }
 
 pub struct AudioServerEndpoint {
-    addr: KyComAddr,
-    tcp_stream: TcpStream,
+    connection: Connection,
 }
 
 impl AudioServerEndpoint {
     pub async fn connect(addr: KyComAddr) -> std::io::Result<Self> {
-        let tcp_stream = TcpStream::connect(addr.addr).await?;
-        Ok(Self { addr, tcp_stream })
+        let connection = Connection::connect(addr).await?;
+        Ok(Self { connection })
     }
 }
 
@@ -135,25 +132,24 @@ impl types::ProtocolEndpointDriver for AudioServerEndpoint {
     type Protocol = types::AudioServerProtocol;
 
     fn id(&self) -> u16 {
-        self.addr.endpoint_id
+        self.connection.addr.endpoint_id
     }
 
     async fn ready_boxed(mut self: Box<Self>) -> Result<Self::Protocol, ProtocolError> {
-        ready(&mut self.tcp_stream, self.addr.endpoint_id).await?;
-        let send = ipc::create_send_protocol(self.tcp_stream, serial::av::AVPacketSerializer);
+        ready(&mut self.connection).await?;
+        let send = ipc::create_send_protocol(self.connection, serial::av::AVPacketSerializer);
         Ok(Self::Protocol { send })
     }
 }
 
 pub struct DataEndpoint {
-    addr: KyComAddr,
-    tcp_stream: TcpStream,
+    connection: Connection,
 }
 
 impl DataEndpoint {
     pub async fn connect(addr: KyComAddr) -> std::io::Result<Self> {
-        let tcp_stream = TcpStream::connect(addr.addr).await?;
-        Ok(Self { addr, tcp_stream })
+        let connection = Connection::connect(addr).await?;
+        Ok(Self { connection })
     }
 }
 
@@ -162,13 +158,14 @@ impl types::ProtocolEndpointDriver for DataEndpoint {
     type Protocol = types::DataProtocol;
 
     fn id(&self) -> u16 {
-        self.addr.endpoint_id
+        self.connection.addr.endpoint_id
     }
 
     async fn ready_boxed(mut self: Box<Self>) -> Result<Self::Protocol, ProtocolError> {
-        ready(&mut self.tcp_stream, self.addr.endpoint_id).await?;
+        ready(&mut self.connection).await?;
         let (send, recv) = ipc::create_bi_protocol(
-            self.tcp_stream,
+            self.connection.read,
+            self.connection.write,
             serial::data::DataPacketSerializer,
             serial::data::DataPacketDeserializer,
         );
@@ -177,14 +174,13 @@ impl types::ProtocolEndpointDriver for DataEndpoint {
 }
 
 pub struct InputEndpoint {
-    addr: KyComAddr,
-    tcp_stream: TcpStream,
+    connection: Connection,
 }
 
 impl InputEndpoint {
     pub async fn connect(addr: KyComAddr) -> std::io::Result<Self> {
-        let tcp_stream = TcpStream::connect(addr.addr).await?;
-        Ok(Self { addr, tcp_stream })
+        let connection = Connection::connect(addr).await?;
+        Ok(Self { connection })
     }
 }
 
@@ -193,13 +189,14 @@ impl types::ProtocolEndpointDriver for InputEndpoint {
     type Protocol = types::InputProtocol;
 
     fn id(&self) -> u16 {
-        self.addr.endpoint_id
+        self.connection.addr.endpoint_id
     }
 
     async fn ready_boxed(mut self: Box<Self>) -> Result<Self::Protocol, ProtocolError> {
-        ready(&mut self.tcp_stream, self.addr.endpoint_id).await?;
+        ready(&mut self.connection).await?;
         let (send, recv) = ipc::create_bi_protocol(
-            self.tcp_stream,
+            self.connection.read,
+            self.connection.write,
             serial::input::InputPacketSerializer,
             serial::input::InputPacketDeserializer,
         );
@@ -208,14 +205,13 @@ impl types::ProtocolEndpointDriver for InputEndpoint {
 }
 
 pub struct MetricsClientEndpoint {
-    addr: KyComAddr,
-    tcp_stream: TcpStream,
+    connection: Connection,
 }
 
 impl MetricsClientEndpoint {
     pub async fn connect(addr: KyComAddr) -> std::io::Result<Self> {
-        let tcp_stream = TcpStream::connect(addr.addr).await?;
-        Ok(Self { addr, tcp_stream })
+        let connection = Connection::connect(addr).await?;
+        Ok(Self { connection })
     }
 }
 
@@ -224,26 +220,25 @@ impl types::ProtocolEndpointDriver for MetricsClientEndpoint {
     type Protocol = types::MetricsClientProtocol;
 
     fn id(&self) -> u16 {
-        self.addr.endpoint_id
+        self.connection.addr.endpoint_id
     }
 
     async fn ready_boxed(mut self: Box<Self>) -> Result<Self::Protocol, ProtocolError> {
-        ready(&mut self.tcp_stream, self.addr.endpoint_id).await?;
+        ready(&mut self.connection).await?;
         let recv =
-            ipc::create_recv_protocol(self.tcp_stream, serial::metrics::MetricsPacketDeserializer);
+            ipc::create_recv_protocol(self.connection, serial::metrics::MetricsPacketDeserializer);
         Ok(Self::Protocol { recv })
     }
 }
 
 pub struct MetricsServerEndpoint {
-    addr: KyComAddr,
-    tcp_stream: TcpStream,
+    connection: Connection,
 }
 
 impl MetricsServerEndpoint {
     pub async fn connect(addr: KyComAddr) -> std::io::Result<Self> {
-        let tcp_stream = TcpStream::connect(addr.addr).await?;
-        Ok(Self { addr, tcp_stream })
+        let connection = Connection::connect(addr).await?;
+        Ok(Self { connection })
     }
 }
 
@@ -252,13 +247,13 @@ impl types::ProtocolEndpointDriver for MetricsServerEndpoint {
     type Protocol = types::MetricsServerProtocol;
 
     fn id(&self) -> u16 {
-        self.addr.endpoint_id
+        self.connection.addr.endpoint_id
     }
 
     async fn ready_boxed(mut self: Box<Self>) -> Result<Self::Protocol, ProtocolError> {
-        ready(&mut self.tcp_stream, self.addr.endpoint_id).await?;
+        ready(&mut self.connection).await?;
         let send =
-            ipc::create_send_protocol(self.tcp_stream, serial::metrics::MetricsPacketSerializer);
+            ipc::create_send_protocol(self.connection, serial::metrics::MetricsPacketSerializer);
         Ok(Self::Protocol { send })
     }
 }

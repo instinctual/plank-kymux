@@ -27,6 +27,7 @@ use url::Url;
 use log::{debug, error, info, warn};
 
 mod client;
+pub mod connection;
 pub mod ipc;
 pub mod serial;
 mod server;
