@@ -13,7 +13,3 @@ kyutil = { path = "../kyutil" }
 log = "0.4.20"
 tokio = { version = "1.32.0", features = ["rt-multi-thread", "io-util", "sync", "macros", "net"] }
 url = "2.5.2"
-
-[features]
-server = []
-client = []

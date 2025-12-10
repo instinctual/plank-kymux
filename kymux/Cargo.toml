@@ -29,14 +29,12 @@ kymux_client = { path = "../kymux_client" }
 default = []
 ipc = [
     "dep:kycom",
-    "kycom/server",
     "tokio/macros",
     "tokio/rt",
     "tokio/sync",
 ]
 ipc-client = [
     "dep:kycom",
-    "kycom/client",
     "tokio/macros",
     "tokio/rt",
     "tokio/sync",

@@ -6,20 +6,16 @@ use url::Url;
 #[allow(unused)]
 use log::{debug, error, info, warn};
 
-#[cfg(feature = "client")]
 mod client;
 pub mod ipc;
 pub mod serial;
-#[cfg(feature = "server")]
 mod server;
 
-#[cfg(feature = "client")]
 pub use client::{
     DataEndpoint, InputEndpoint, MetricsClientEndpoint, MetricsServerEndpoint, VideoClientEndpoint,
     VideoServerEndpoint,
 };
 pub use kymux_types::*;
-#[cfg(feature = "server")]
 pub use server::{Forwarder, KyCom, TcpForwarder};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
