@@ -37,11 +37,12 @@ use tokio::io::AsyncWriteExt;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
-type EndpointMap = HashMap<u16, oneshot::Sender<Connection>>;
+type EndpointMap = HashMap<u16, oneshot::Sender<std::io::Result<Connection>>>;
 
 pub struct KyCom {
     addr: SocketAddr,
-    pending_endpoints: Arc<Mutex<EndpointMap>>,
+    // Some() initially, then None once accept() fails
+    pending_endpoints: Arc<Mutex<Option<EndpointMap>>>,
     listen_task: JoinHandle<()>,
     runner: Option<Runner>,
 }
@@ -50,7 +51,7 @@ impl KyCom {
     fn new(server: Server) -> Self {
         let addr = server.addr;
 
-        let pending_endpoints = Arc::new(Mutex::new(HashMap::new()));
+        let pending_endpoints = Arc::new(Mutex::new(Some(HashMap::new())));
         let pending_endpoints2 = pending_endpoints.clone();
         let listen_task = tokio::spawn(async move {
             if let Err(err) = Self::listen(server, pending_endpoints2).await {
@@ -88,6 +89,9 @@ impl KyCom {
         let rx = {
             let endpoint_id = endpoint.id();
             let mut pending_endpoints = self.pending_endpoints.lock().unwrap();
+            let Some(pending_endpoints) = pending_endpoints.as_mut() else {
+                return Err(ErrorKind::ConnectionAborted.into());
+            };
             match pending_endpoints.entry(endpoint_id) {
                 Entry::Occupied(_) => {
                     return Err(Error::new(
@@ -141,16 +145,29 @@ impl KyCom {
 
     async fn listen(
         mut server: Server,
-        pending_endpoints: Arc<Mutex<EndpointMap>>,
+        pending_endpoints: Arc<Mutex<Option<EndpointMap>>>,
     ) -> std::io::Result<()> {
         loop {
-            let connection = server.accept().await?;
+            let connection = match server.accept().await {
+                Ok(connection) => connection,
+                Err(err) => {
+                    let mut pending_endpoints = pending_endpoints.lock().unwrap();
+                    // take() sets pending_endpoints to None
+                    let pending_endpoints = pending_endpoints.take().expect("Unexpectedly state");
+                    for tx in pending_endpoints.into_values() {
+                        // Notify all pending endpoints
+                        let _ = tx.send(Err(std::io::ErrorKind::ConnectionAborted.into()));
+                    }
+                    return Err(err);
+                }
+            };
             let endpoint_id = connection.addr.endpoint_id;
 
             let mut pending_endpoints = pending_endpoints.lock().unwrap();
+            let pending_endpoints = pending_endpoints.as_mut().expect("Unexpectedly state");
             if let Some(tx) = pending_endpoints.remove(&endpoint_id) {
                 // Ignore error (if the receiver is dropped)
-                let _ = tx.send(connection);
+                let _ = tx.send(Ok(connection));
             } else {
                 return Err(Error::new(
                     ErrorKind::NotFound,
@@ -248,7 +265,7 @@ pub async fn forward_protocol_bi<TX: Send + 'static, RX: Send + 'static>(
 
 pub struct TcpForwarder<P> {
     addr: SocketAddr,
-    rx: oneshot::Receiver<Connection>,
+    rx: oneshot::Receiver<std::io::Result<Connection>>,
     endpoint: types::ProtocolEndpoint<P>,
 }
 
@@ -261,7 +278,8 @@ impl<P> TcpForwarder<P> {
         let mut connection = self
             .rx
             .await
-            .map_err(|_| ProtocolError::new("Connection sender dropped"))?;
+            .map_err(|_| ProtocolError::new("Connection sender dropped"))?
+            .map_err(ProtocolError::new)?;
 
         let protocol = self.endpoint.ready().await?;
         connection
