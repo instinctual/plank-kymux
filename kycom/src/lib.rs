@@ -26,13 +26,13 @@ use url::Url;
 #[allow(unused)]
 use log::{debug, error, info, warn};
 
-mod client;
+mod endpoint;
 pub mod connection;
 pub mod ipc;
 pub mod serial;
 mod server;
 
-pub use client::{
+pub use endpoint::{
     AudioClientEndpoint, AudioServerEndpoint, DataEndpoint, InputEndpoint, MetricsClientEndpoint,
     MetricsServerEndpoint, VideoClientEndpoint, VideoServerEndpoint,
 };
