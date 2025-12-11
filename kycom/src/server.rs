@@ -19,6 +19,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use crate::connection::{Connection, Server};
+use crate::endpoint::Channel;
 use crate::ipc;
 use crate::serial;
 use crate::KyComAddr;
@@ -80,6 +81,32 @@ impl KyCom {
     pub async fn start_on_any_port(local_ports: std::ops::Range<u16>) -> std::io::Result<Self> {
         let server = Server::start_on_any_port(local_ports).await?;
         Ok(Self::new(server))
+    }
+
+    pub fn register_channel(&self, endpoint_id: u16) -> std::io::Result<Channel> {
+        let rx = {
+            let mut pending_endpoints = self.pending_endpoints.lock().unwrap();
+            let Some(pending_endpoints) = pending_endpoints.as_mut() else {
+                return Err(ErrorKind::ConnectionAborted.into());
+            };
+            match pending_endpoints.entry(endpoint_id) {
+                Entry::Occupied(_) => {
+                    return Err(Error::new(
+                        ErrorKind::AlreadyExists,
+                        format!("Endpoint {endpoint_id} already pending"),
+                    ));
+                }
+                Entry::Vacant(entry) => {
+                    let (tx, rx) = oneshot::channel();
+                    entry.insert(tx);
+                    rx
+                }
+            }
+        };
+
+        let addr = KyComAddr::new(self.addr, endpoint_id);
+        let channel = Channel::new(addr, rx);
+        Ok(channel)
     }
 
     pub fn register<T>(
