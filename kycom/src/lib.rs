@@ -26,16 +26,13 @@ use url::Url;
 #[allow(unused)]
 use log::{debug, error, info, warn};
 
-mod endpoint;
 pub mod connection;
+mod endpoint;
 pub mod ipc;
 pub mod serial;
 mod server;
 
-pub use endpoint::{
-    AudioClientEndpoint, AudioServerEndpoint, DataEndpoint, InputEndpoint, MetricsClientEndpoint,
-    MetricsServerEndpoint, VideoClientEndpoint, VideoServerEndpoint,
-};
+pub use endpoint::Channel;
 pub use kymux_types::*;
 pub use server::{Forwarder, KyCom, TcpForwarder};
 
