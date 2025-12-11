@@ -32,8 +32,8 @@ pub mod serial;
 mod server;
 
 pub use client::{
-    DataEndpoint, InputEndpoint, MetricsClientEndpoint, MetricsServerEndpoint, VideoClientEndpoint,
-    VideoServerEndpoint,
+    AudioClientEndpoint, AudioServerEndpoint, DataEndpoint, InputEndpoint, MetricsClientEndpoint,
+    MetricsServerEndpoint, VideoClientEndpoint, VideoServerEndpoint,
 };
 pub use kymux_types::*;
 pub use server::{Forwarder, KyCom, TcpForwarder};
