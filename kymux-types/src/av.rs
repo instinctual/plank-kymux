@@ -21,14 +21,14 @@
 use byteorder::{BigEndian, ByteOrder};
 use bytes::Bytes;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum AVPacket {
     Codec(CodecPacket),
     Media(MediaPacket),
     Hole(HolePacket),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum AVPacketHeader {
     Codec(CodecPacketHeader),
     Media(MediaPacketHeader),
@@ -39,25 +39,25 @@ impl AVPacketHeader {
     pub const SERIALIZED_SIZE: usize = 12;
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CodecPacket {
     pub header: CodecPacketHeader,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CodecPacketHeader {
     pub codec: u32,
     pub rotation: u8,
     pub frame_size: u16,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct MediaPacket {
     pub header: MediaPacketHeader,
     pub payload: Bytes,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct MediaPacketHeader {
     pub is_config: bool,
     pub is_key: bool,
@@ -65,12 +65,12 @@ pub struct MediaPacketHeader {
     pub size: u32,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct HolePacket {
     pub header: HolePacketHeader,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct HolePacketHeader {
     pub missing_audio_samples: u32,
 }

@@ -20,7 +20,7 @@
 
 use bytes::Bytes;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct MetricsPacket {
     pub payload: Bytes,
 }

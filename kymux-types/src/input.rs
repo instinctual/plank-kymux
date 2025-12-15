@@ -20,7 +20,7 @@
 
 use bytes::Bytes;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct InputPacket {
     pub type_: u8,
     pub payload: Bytes,
