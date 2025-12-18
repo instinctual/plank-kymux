@@ -12,6 +12,9 @@ use std::time::Duration;
 use async_trait::async_trait;
 use bytes::Bytes;
 
+/// ALPN protocol identifier for Kymux protocol over standard QUIC.
+pub const KYMUX_ALPN: &[u8] = b"kymux";
+
 /// Certificate verifier that validates server certificates by comparing their SHA-256 hash.
 /// This is used for connecting to servers with self-signed certificates
 /// where the expected hash is provided out-of-band (similar to WebTransport's serverCertificateHashes).
@@ -205,6 +208,10 @@ impl QuinnConnectionDriver {
                 "Cannot connect: no certificate hash or root certificates provided".to_string(),
             ));
         };
+
+        // Set ALPN for Kymux protocol over QUIC
+        let mut tls_config = tls_config;
+        tls_config.alpn_protocols = vec![KYMUX_ALPN.to_vec()];
 
         // Create Quinn client config
         let mut config = quinn::ClientConfig::new(Arc::new(
