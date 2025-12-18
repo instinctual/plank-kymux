@@ -43,12 +43,10 @@ backend-quinn = [
     "dep:rustls",
     "kynet/kynet-quinn",
     "kyproto/kynet-quinn",
-    "server",
 ]
 backend-wtransport = [
     "kynet/kynet-wtransport",
     "kyproto/kynet-wtransport",
-    "server",
 ]
 backend-webtransport-js = [
     "kynet/kynet-webtransport-js",
@@ -57,7 +55,9 @@ backend-webtransport-js = [
 js = [
     "kyproto/js",
 ]
-server = []
+server = [
+    "backend-quinn",
+]
 tokio-rt = [
     "kyproto?/tokio-rt",
 ]

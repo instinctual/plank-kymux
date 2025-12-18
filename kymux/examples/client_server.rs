@@ -79,7 +79,7 @@ async fn main() {
     // Server
     let server_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), KYMUX_PORT);
 
-    let server_config = kymux::ServerConfig::Quic {
+    let server_config = kymux::ServerConfig {
         addr: server_addr,
         cert_chain: keys.cert_chain.clone(),
         private_key: keys.private_key,

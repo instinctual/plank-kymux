@@ -15,19 +15,11 @@ pub use kyproto;
 #[allow(dead_code)]
 const KEEP_ALIVE_INTERVAL: Duration = Duration::from_secs(5);
 
-pub enum ServerConfig {
-    #[cfg(feature = "backend-quinn")]
-    Quic {
-        addr: std::net::SocketAddr,
-        cert_chain: Vec<rustls::pki_types::CertificateDer<'static>>,
-        private_key: rustls::pki_types::PrivateKeyDer<'static>,
-    },
-    #[cfg(feature = "backend-wtransport")]
-    Wtransport {
-        addr: std::net::SocketAddr,
-        cert_chain: Vec<rustls::pki_types::CertificateDer<'static>>,
-        private_key: rustls::pki_types::PrivateKeyDer<'static>,
-    },
+#[cfg(feature = "server")]
+pub struct ServerConfig {
+    pub addr: std::net::SocketAddr,
+    pub cert_chain: Vec<rustls::pki_types::CertificateDer<'static>>,
+    pub private_key: rustls::pki_types::PrivateKeyDer<'static>,
 }
 
 pub struct WebTransportCertificateHash {
@@ -62,47 +54,19 @@ pub struct Server {
 #[cfg(feature = "server")]
 impl Server {
     pub async fn new(config: ServerConfig) -> Result<Self> {
-        // Setup quinn to accept connections
-        let inner: Box<dyn kyproto::Server> = match config {
-            #[cfg(feature = "backend-quinn")]
-            ServerConfig::Quic {
-                addr,
-                cert_chain,
-                private_key,
-            } => {
-                let server = kyproto::Connection::quinn_start_server_on_addr(
-                    addr,
-                    cert_chain,
-                    private_key,
-                    &kyproto::quinn::QuinnServerOptions {
-                        keep_alive_interval: Some(KEEP_ALIVE_INTERVAL),
-                        ..Default::default()
-                    },
-                )?;
+        let server = kyproto::Connection::common_start_server_on_addr(
+            config.addr,
+            config.cert_chain,
+            config.private_key,
+            &kyproto::common::CommonServerOptions {
+                keep_alive_interval: Some(KEEP_ALIVE_INTERVAL),
+                ..Default::default()
+            },
+        )?;
 
-                Box::new(server)
-            }
-            #[cfg(feature = "backend-wtransport")]
-            ServerConfig::Wtransport {
-                addr,
-                cert_chain,
-                private_key,
-            } => {
-                let server = kyproto::Connection::wtransport_start_server_on_addr(
-                    addr,
-                    cert_chain,
-                    private_key,
-                    &kyproto::wtransport::WTransportServerOptions {
-                        keep_alive_interval: Some(KEEP_ALIVE_INTERVAL),
-                        ..Default::default()
-                    },
-                )?;
-
-                Box::new(server)
-            }
-        };
-
-        Ok(Self { inner })
+        Ok(Self {
+            inner: Box::new(server),
+        })
     }
 
     pub async fn accept(&self) -> Result<kyproto::Connection> {

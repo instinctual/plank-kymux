@@ -4,7 +4,7 @@ variables:
   WASM_IMAGE: registry.gitlab.com/kyber-labs/kyber-streamer/docker-images/debian-wasm:20250822133647
   WIN64_IMAGE: registry.gitlab.com/kyber-labs/kyber-streamer/docker-images/debian-win64:20250819183159
   MACOS_RUST_VERSION: 1.89.0
-  DESKTOP_FEATURES: backend-quinn,backend-wtransport,tokio-rt,ipc,ipc-client
+  DESKTOP_FEATURES: server,backend-quinn,backend-wtransport,tokio-rt,ipc,ipc-client
   WEB_FEATURES: backend-webtransport-js,js
 
 stages:

@@ -60,7 +60,7 @@ async fn create_connection() -> (IPCForwardableConnection, IPCForwardableConnect
     let keys = gen_keys(SERVER_NAME);
 
     let server_accept = async move {
-        let config = kymux::ServerConfig::Quic {
+        let config = kymux::ServerConfig {
             addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), PORT),
             cert_chain: vec![keys.cert_chain[0].clone()],
             private_key: keys.private_key,
