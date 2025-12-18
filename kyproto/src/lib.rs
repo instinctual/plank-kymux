@@ -48,6 +48,9 @@ pub use connection::webtransport_js;
 #[cfg(all(feature = "kynet-wtransport", not(target_family = "wasm")))]
 pub use connection::wtransport;
 
+#[cfg(all(feature = "kynet-quinn", not(target_family = "wasm")))]
+pub use connection::common;
+
 pub struct VideoServerEndpoint {
     id: u16,
     ready_notifier: ReadyNotifier,
@@ -469,45 +472,6 @@ impl Connection {
         Self::connect_with_auth(conn, auth).await
     }
 
-    #[cfg(all(feature = "kynet-quinn", not(target_family = "wasm")))]
-    pub fn quinn_start_server_on_addr(
-        addr: SocketAddr,
-        cert_chain: Vec<cert::Certificate>,
-        key: cert::PrivateKey,
-        options: &quinn::QuinnServerOptions,
-    ) -> Result<quinn::QuinnServer, ConnectionError> {
-        quinn::QuinnServer::start_on_addr(addr, cert_chain, key, options)
-    }
-
-    #[cfg(all(feature = "kynet-quinn", not(target_family = "wasm")))]
-    pub fn quinn_start_server(
-        port: u16,
-        cert_chain: Vec<cert::Certificate>,
-        key: cert::PrivateKey,
-        options: &quinn::QuinnServerOptions,
-    ) -> Result<quinn::QuinnServer, ConnectionError> {
-        quinn::QuinnServer::start(port, cert_chain, key, options)
-    }
-
-    #[cfg(all(feature = "kynet-webtransport-js", target_family = "wasm"))]
-    pub async fn webtransport_js_connect(
-        url: &str,
-        options: &webtransport_js::WebTransportJSOptions,
-    ) -> Result<Self, ConnectionError> {
-        let conn = kynet::Connection::webtransport_js_connect(url, options).await?;
-        Self::connect(conn).await
-    }
-
-    #[cfg(all(feature = "kynet-webtransport-js", target_family = "wasm"))]
-    pub async fn webtransport_js_connect_with_auth(
-        url: &str,
-        options: &webtransport_js::WebTransportJSOptions,
-        auth: &ClientAuth,
-    ) -> Result<Self, ConnectionError> {
-        let conn = kynet::Connection::webtransport_js_connect(url, options).await?;
-        Self::connect_with_auth(conn, auth).await
-    }
-
     #[cfg(all(feature = "kynet-wtransport", not(target_family = "wasm")))]
     pub async fn wtransport_connect(
         url: &str,
@@ -529,24 +493,33 @@ impl Connection {
         Self::connect_with_auth(conn, auth).await
     }
 
-    #[cfg(all(feature = "kynet-wtransport", not(target_family = "wasm")))]
-    pub fn wtransport_start_server_on_addr(
+    #[cfg(all(feature = "kynet-webtransport-js", target_family = "wasm"))]
+    pub async fn webtransport_js_connect(
+        url: &str,
+        options: &webtransport_js::WebTransportJSOptions,
+    ) -> Result<Self, ConnectionError> {
+        let conn = kynet::Connection::webtransport_js_connect(url, options).await?;
+        Self::connect(conn).await
+    }
+
+    #[cfg(all(feature = "kynet-webtransport-js", target_family = "wasm"))]
+    pub async fn webtransport_js_connect_with_auth(
+        url: &str,
+        options: &webtransport_js::WebTransportJSOptions,
+        auth: &ClientAuth,
+    ) -> Result<Self, ConnectionError> {
+        let conn = kynet::Connection::webtransport_js_connect(url, options).await?;
+        Self::connect_with_auth(conn, auth).await
+    }
+
+    #[cfg(all(feature = "kynet-quinn", not(target_family = "wasm")))]
+    pub fn common_start_server_on_addr(
         addr: SocketAddr,
         cert_chain: Vec<cert::Certificate>,
         key: cert::PrivateKey,
-        options: &wtransport::WTransportServerOptions,
-    ) -> Result<wtransport::WTransportServer, ConnectionError> {
-        wtransport::WTransportServer::start_on_addr(addr, cert_chain, key, options)
-    }
-
-    #[cfg(all(feature = "kynet-wtransport", not(target_family = "wasm")))]
-    pub fn wtransport_start_server(
-        port: u16,
-        cert: Vec<cert::Certificate>,
-        key: cert::PrivateKey,
-        options: &wtransport::WTransportServerOptions,
-    ) -> Result<wtransport::WTransportServer, ConnectionError> {
-        wtransport::WTransportServer::start(port, cert, key, options)
+        options: &common::CommonServerOptions,
+    ) -> Result<common::CommonServer, ConnectionError> {
+        common::CommonServer::start_on_addr(addr, cert_chain, key, options)
     }
 
     fn get_endpoint_id(&self, id: Option<u16>) -> u16 {
