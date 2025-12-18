@@ -1,4 +1,4 @@
-use crate::cert::{Certificate, PrivateKey, RootCertStore};
+use crate::cert::RootCertStore;
 use crate::error::*;
 use crate::{
     Connection, ConnectionDriver, ConnectionStats, RecvStream, RecvStreamDriver, SendStream,
@@ -91,74 +91,6 @@ impl rustls::client::danger::ServerCertVerifier for HashCertVerifier {
 impl From<quinn::Connection> for Connection {
     fn from(value: quinn::Connection) -> Self {
         Self::new(QuinnConnectionDriver::wrap(value))
-    }
-}
-
-#[derive(Default)]
-pub struct QuinnServerOptions {
-    pub max_idle_timeout: Option<Duration>,
-    pub keep_alive_interval: Option<Duration>,
-}
-
-pub struct QuinnServer {
-    endpoint: quinn::Endpoint,
-}
-
-impl QuinnServer {
-    pub fn start_on_addr(
-        addr: SocketAddr,
-        cert_chain: Vec<Certificate>,
-        key: PrivateKey,
-        options: &QuinnServerOptions,
-    ) -> Result<Self, ConnectionError> {
-        let mut config = quinn::ServerConfig::with_single_cert(cert_chain, key)?;
-
-        let mut transport_config = quinn::TransportConfig::default();
-        transport_config.max_idle_timeout(
-            options
-                .max_idle_timeout
-                .map(quinn::IdleTimeout::try_from)
-                .transpose()
-                .map_err(|_| ConnectionError("Invalid max_idle_timeout".to_string()))?,
-        );
-        transport_config.keep_alive_interval(options.keep_alive_interval);
-        config.transport_config(Arc::new(transport_config));
-
-        let endpoint = quinn::Endpoint::server(config, addr)?;
-        Ok(Self { endpoint })
-    }
-
-    pub fn start(
-        port: u16,
-        cert_chain: Vec<Certificate>,
-        key: PrivateKey,
-        options: &QuinnServerOptions,
-    ) -> Result<Self, ConnectionError> {
-        let addr = SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), port);
-        Self::start_on_addr(addr, cert_chain, key, options)
-    }
-}
-
-#[cfg_attr(target_family = "wasm", async_trait(?Send))]
-#[cfg_attr(not(target_family = "wasm"), async_trait)]
-impl super::Server for QuinnServer {
-    async fn accept(&self) -> Result<Connection, ConnectionError> {
-        let connecting = self
-            .endpoint
-            .accept()
-            .await
-            .ok_or_else(|| ConnectionError("Endpoint closed".to_string()))?;
-        let connection = connecting.await?;
-        Ok(connection.into())
-    }
-
-    fn close(&self, error_code: u32, reason: &str) {
-        let var_int = quinn::VarInt::from_u32(error_code);
-        self.endpoint.close(var_int, reason.as_bytes());
-    }
-
-    async fn wait_idle(&self) {
-        self.endpoint.wait_idle().await;
     }
 }
 

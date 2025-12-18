@@ -1,84 +1,18 @@
-use crate::cert::{Certificate, PrivateKey, RootCertStore};
+use crate::cert::RootCertStore;
 use crate::error::*;
 use crate::{
     Connection, ConnectionDriver, ConnectionStats, RecvStream, RecvStreamDriver, SendStream,
     SendStreamDriver,
 };
 
-use std::net::{Ipv6Addr, SocketAddr};
 use std::time::Duration;
 
 use async_trait::async_trait;
 use bytes::Bytes;
-#[allow(unused)]
-use log::{debug, error, info, warn};
 
 impl From<wtransport::Connection> for Connection {
     fn from(value: wtransport::Connection) -> Self {
         Self::new(WTransportConnectionDriver::wrap(value))
-    }
-}
-
-#[derive(Default)]
-pub struct WTransportServerOptions {
-    pub max_idle_timeout: Option<Duration>,
-    pub keep_alive_interval: Option<Duration>,
-}
-
-pub struct WTransportServer {
-    endpoint: wtransport::Endpoint<wtransport::endpoint::endpoint_side::Server>,
-}
-
-impl WTransportServer {
-    pub fn start_on_addr(
-        addr: SocketAddr,
-        cert_chain: Vec<Certificate>,
-        key: PrivateKey,
-        options: &WTransportServerOptions,
-    ) -> Result<Self, ConnectionError> {
-        let mut tls_config = rustls::ServerConfig::builder()
-            .with_no_client_auth()
-            .with_single_cert(cert_chain, key)?;
-        tls_config.alpn_protocols = vec![wtransport_proto::WEBTRANSPORT_ALPN.to_vec()];
-
-        let config = wtransport::ServerConfig::builder()
-            .with_bind_address(addr)
-            .with_custom_tls(tls_config)
-            .max_idle_timeout(options.max_idle_timeout)?
-            .keep_alive_interval(options.keep_alive_interval)
-            .build();
-
-        let endpoint = wtransport::Endpoint::server(config)?;
-        Ok(Self { endpoint })
-    }
-
-    pub fn start(
-        port: u16,
-        cert_chain: Vec<Certificate>,
-        key: PrivateKey,
-        options: &WTransportServerOptions,
-    ) -> Result<Self, ConnectionError> {
-        let addr = SocketAddr::new(Ipv6Addr::UNSPECIFIED.into(), port);
-        Self::start_on_addr(addr, cert_chain, key, options)
-    }
-}
-
-#[cfg_attr(target_family = "wasm", async_trait(?Send))]
-#[cfg_attr(not(target_family = "wasm"), async_trait)]
-impl super::Server for WTransportServer {
-    async fn accept(&self) -> Result<Connection, ConnectionError> {
-        let request = self.endpoint.accept().await.await?;
-        let conn = request.accept().await?;
-        Ok(conn.into())
-    }
-
-    fn close(&self, error_code: u32, reason: &str) {
-        let var_int = wtransport_proto::varint::VarInt::from(error_code);
-        self.endpoint.close(var_int, reason.as_bytes());
-    }
-
-    async fn wait_idle(&self) {
-        self.endpoint.wait_idle().await;
     }
 }
 

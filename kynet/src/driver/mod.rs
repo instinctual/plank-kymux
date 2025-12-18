@@ -21,6 +21,10 @@ pub(crate) mod wtransport;
 #[cfg(all(feature = "kynet-wtransport", target_family = "wasm"))]
 compile_error!("WTransport is not available for wasm");
 
+// CommonServer only requires quinn, but can optionally support WebTransport
+#[cfg(all(feature = "kynet-quinn", not(target_family = "wasm")))]
+pub(crate) mod common;
+
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
 pub trait ConnectionDriver: Debug + KySend + KySync {

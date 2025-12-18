@@ -24,7 +24,7 @@ use bytes::Bytes;
 
 #[cfg(all(feature = "kynet-quinn", not(target_family = "wasm")))]
 pub mod quinn {
-    pub use crate::driver::quinn::{QuinnClientOptions, QuinnServer, QuinnServerOptions};
+    pub use crate::driver::quinn::QuinnClientOptions;
 }
 
 #[cfg(all(feature = "kynet-webtransport-js", target_family = "wasm"))]
@@ -36,9 +36,12 @@ pub mod webtransport_js {
 
 #[cfg(all(feature = "kynet-wtransport", not(target_family = "wasm")))]
 pub mod wtransport {
-    pub use crate::driver::wtransport::{
-        WTransportClientOptions, WTransportServer, WTransportServerOptions,
-    };
+    pub use crate::driver::wtransport::WTransportClientOptions;
+}
+
+#[cfg(all(feature = "kynet-quinn", not(target_family = "wasm")))]
+pub mod common {
+    pub use crate::driver::common::{CommonServer, CommonServerOptions};
 }
 
 pub use crate::driver::Server;
@@ -81,24 +84,13 @@ impl Connection {
         QuinnConnectionDriver::connect(addr, server_name, certs, options).await
     }
 
-    #[cfg(all(feature = "kynet-quinn", not(target_family = "wasm")))]
-    pub fn quinn_start_server_on_addr(
-        addr: SocketAddr,
-        cert_chain: Vec<cert::Certificate>,
-        key: cert::PrivateKey,
-        options: &quinn::QuinnServerOptions,
-    ) -> Result<quinn::QuinnServer, ConnectionError> {
-        quinn::QuinnServer::start_on_addr(addr, cert_chain, key, options)
-    }
-
-    #[cfg(all(feature = "kynet-quinn", not(target_family = "wasm")))]
-    pub fn quinn_start_server(
-        port: u16,
-        cert_chain: Vec<cert::Certificate>,
-        key: cert::PrivateKey,
-        options: &quinn::QuinnServerOptions,
-    ) -> Result<quinn::QuinnServer, ConnectionError> {
-        quinn::QuinnServer::start(port, cert_chain, key, options)
+    #[cfg(all(feature = "kynet-wtransport", not(target_family = "wasm")))]
+    pub async fn wtransport_connect(
+        url: &str,
+        certs: Option<cert::RootCertStore>,
+        options: &wtransport::WTransportClientOptions,
+    ) -> Result<Self, ConnectionError> {
+        WTransportConnectionDriver::connect(url, certs, options).await
     }
 
     #[cfg(all(feature = "kynet-webtransport-js", target_family = "wasm"))]
@@ -107,35 +99,6 @@ impl Connection {
         options: &webtransport_js::WebTransportJSOptions,
     ) -> Result<Self, ConnectionError> {
         WebTransportJSConnectionDriver::connect(url, options).await
-    }
-
-    #[cfg(all(feature = "kynet-wtransport", not(target_family = "wasm")))]
-    pub fn wtransport_start_server_on_addr(
-        addr: SocketAddr,
-        cert_chain: Vec<cert::Certificate>,
-        key: cert::PrivateKey,
-        options: &wtransport::WTransportServerOptions,
-    ) -> Result<wtransport::WTransportServer, ConnectionError> {
-        wtransport::WTransportServer::start_on_addr(addr, cert_chain, key, options)
-    }
-
-    #[cfg(all(feature = "kynet-wtransport", not(target_family = "wasm")))]
-    pub fn wtransport_start_server(
-        port: u16,
-        cert_chain: Vec<cert::Certificate>,
-        key: cert::PrivateKey,
-        options: &wtransport::WTransportServerOptions,
-    ) -> Result<wtransport::WTransportServer, ConnectionError> {
-        wtransport::WTransportServer::start(port, cert_chain, key, options)
-    }
-
-    #[cfg(all(feature = "kynet-wtransport", not(target_family = "wasm")))]
-    pub async fn wtransport_connect(
-        url: &str,
-        certs: Option<cert::RootCertStore>,
-        options: &wtransport::WTransportClientOptions,
-    ) -> Result<Self, ConnectionError> {
-        WTransportConnectionDriver::connect(url, certs, options).await
     }
 
     pub async fn open_uni(&self) -> Result<SendStream, ConnectionError> {
