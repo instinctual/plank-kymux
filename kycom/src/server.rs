@@ -229,13 +229,11 @@ pub async fn forward_protocol_bi<TX: Send + 'static, RX: Send + 'static>(
     ipc_send: types::ProtocolSend<TX>,
     ipc_recv: types::ProtocolRecv<RX>,
 ) -> Result<(), ProtocolError> {
-    let send_task = tokio::spawn(async move { forward_protocol(ipc_recv, proto_send).await });
-    let recv_task = tokio::spawn(async move { forward_protocol(proto_recv, ipc_send).await });
-    let (send_result, recv_result) = tokio::join!(send_task, recv_task);
-    let _ = send_result.map_err(ProtocolError::new)?;
-    let _ = recv_result.map_err(ProtocolError::new)?;
-
-    Ok(())
+    tokio::select! {
+        res = forward_protocol(ipc_recv, proto_send) => res,
+        res = forward_protocol(proto_recv, ipc_send) => res,
+    }
+    .map_err(ProtocolError::new)
 }
 
 pub struct TcpForwarder<P> {
