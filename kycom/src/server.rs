@@ -159,8 +159,11 @@ impl KyCom {
         Ok(())
     }
 
-    pub fn stop(self) {
+    pub fn stop(mut self) {
         // drop self
+        if let Some(runner) = self.runner.take() {
+            runner.stop();
+        }
     }
 }
 
@@ -209,6 +212,12 @@ impl Runner {
         });
 
         self.tasks.push(Task { join_handle });
+    }
+
+    pub fn stop(self) {
+        for task in self.tasks {
+            task.join_handle.abort();
+        }
     }
 }
 
