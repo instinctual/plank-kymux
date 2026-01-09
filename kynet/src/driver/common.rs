@@ -2,7 +2,7 @@ use crate::cert::{Certificate, PrivateKey};
 use crate::error::ConnectionError;
 use crate::Connection;
 
-use std::net::SocketAddr;
+use std::net::{Ipv6Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -67,6 +67,16 @@ impl CommonServer {
         Ok(Self {
             quinn_endpoint: Arc::new(quinn_endpoint),
         })
+    }
+
+    pub fn start(
+        port: u16,
+        cert_chain: Vec<Certificate>,
+        key: PrivateKey,
+        options: &CommonServerOptions,
+    ) -> Result<Self, ConnectionError> {
+        let addr = SocketAddr::new(Ipv6Addr::UNSPECIFIED.into(), port);
+        Self::start_on_addr(addr, cert_chain, key, options)
     }
 }
 

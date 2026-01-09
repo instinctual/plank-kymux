@@ -101,6 +101,27 @@ impl Connection {
         WebTransportJSConnectionDriver::connect(url, options).await
     }
 
+    // CommonServer only requires quinn, but can optionally support WebTransport
+    #[cfg(all(feature = "kynet-quinn", not(target_family = "wasm")))]
+    pub fn start_server_on_addr(
+        addr: SocketAddr,
+        cert_chain: Vec<cert::Certificate>,
+        key: cert::PrivateKey,
+        options: &common::CommonServerOptions,
+    ) -> Result<common::CommonServer, ConnectionError> {
+        common::CommonServer::start_on_addr(addr, cert_chain, key, options)
+    }
+
+    #[cfg(all(feature = "kynet-quinn", not(target_family = "wasm")))]
+    pub fn start_server(
+        port: u16,
+        cert_chain: Vec<cert::Certificate>,
+        key: cert::PrivateKey,
+        options: &common::CommonServerOptions,
+    ) -> Result<common::CommonServer, ConnectionError> {
+        common::CommonServer::start(port, cert_chain, key, options)
+    }
+
     pub async fn open_uni(&self) -> Result<SendStream, ConnectionError> {
         self.driver.open_uni().await
     }
