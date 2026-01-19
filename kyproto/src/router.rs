@@ -462,15 +462,9 @@ impl KyChannel {
 
 impl Drop for KyChannelDropper {
     fn drop(&mut self) {
-        // No async drop
-        let clients = self.clients.clone();
-        let endpoint_id = self.endpoint_id;
-        runtime::spawn(async move {
-            // Remove registration
-            let mut clients = clients.lock();
-            let ret = clients.remove(&endpoint_id);
-            // An id must not be reused, so it's not racy
-            assert!(ret.is_some());
-        });
+        let mut clients = self.clients.lock();
+        let ret = clients.remove(&self.endpoint_id);
+        // An id must not be reused, so it's not racy
+        assert!(ret.is_some());
     }
 }
