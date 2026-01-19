@@ -1,8 +1,8 @@
 variables:
   GIT_SUBMODULE_STRATEGY: recursive
-  DEBIAN_IMAGE: registry.gitlab.com/kyber-labs/kyber-streamer/docker-images/debian-trixie:20260106094705
-  WASM_IMAGE: registry.gitlab.com/kyber-labs/kyber-streamer/docker-images/debian-wasm:20260106095239
-  WIN64_IMAGE: registry.gitlab.com/kyber-labs/kyber-streamer/docker-images/debian-win64:20260106095522
+  DEBIAN_IMAGE: registry.gitlab.com/kyber.stream/ops/docker-images/debian-trixie:20260127115341
+  WASM_IMAGE: registry.gitlab.com/kyber.stream/ops/docker-images/debian-wasm:20260127120059
+  WIN64_IMAGE: registry.gitlab.com/kyber.stream/ops/docker-images/debian-win64:20260127120515
   MACOS_RUST_VERSION: 1.89.0
   DESKTOP_FEATURES: server,backend-quinn,backend-wtransport,tokio-rt,ipc,ipc-client
   WEB_FEATURES: backend-webtransport-js,js
