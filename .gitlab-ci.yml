@@ -1,8 +1,8 @@
 variables:
   GIT_SUBMODULE_STRATEGY: recursive
-  DEBIAN_IMAGE: registry.gitlab.com/kyber.stream/ops/docker-images/debian-trixie:20260127115341
-  WASM_IMAGE: registry.gitlab.com/kyber.stream/ops/docker-images/debian-wasm:20260127120059
-  WIN64_IMAGE: registry.gitlab.com/kyber.stream/ops/docker-images/debian-win64:20260127120515
+  DEBIAN_IMAGE: ${CI_REGISTRY}/${ROOT_NAMESPACE}/ops/docker-images/debian-trixie:1708fd23b028cc9369b568f9ff976a84f7c869c2
+  WASM_IMAGE: ${CI_REGISTRY}/${ROOT_NAMESPACE}/ops/docker-images/debian-wasm:1708fd23b028cc9369b568f9ff976a84f7c869c2
+  WIN64_IMAGE: ${CI_REGISTRY}/${ROOT_NAMESPACE}/ops/docker-images/debian-win64:1708fd23b028cc9369b568f9ff976a84f7c869c2
   MACOS_RUST_VERSION: 1.89.0
   DESKTOP_FEATURES: server,backend-quinn,backend-wtransport,tokio-rt,ipc,ipc-client
   WEB_FEATURES: backend-webtransport-js,js
