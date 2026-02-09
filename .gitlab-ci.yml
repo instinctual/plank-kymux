@@ -165,10 +165,12 @@ clippy-windows-x86_64:
 
 build-macos-x86_64:
   extends: .build-macos-common
+  when: manual
   variables: *variables-macos-x86_64
 
 clippy-macos-x86_64:
   extends: .clippy-macos-common
+  when: manual
   variables: *variables-macos-x86_64
   needs:
     - build-macos-x86_64
