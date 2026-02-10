@@ -103,33 +103,38 @@ impl CommonServer {
 #[async_trait]
 impl super::Server for CommonServer {
     async fn accept(&self) -> Result<Connection, ConnectionError> {
-        let connecting = self
+        let quinn_incoming = self
             .quinn_endpoint
             .accept()
             .await
             .ok_or_else(|| ConnectionError("Endpoint closed".to_string()))?;
 
-        let quinn_conn = connecting
-            .await
-            .map_err(|e| ConnectionError(format!("Connection failed: {:?}", e)))?;
+        #[allow(unused_mut)]
+        let mut quinn_connecting = quinn_incoming
+            .accept()
+            .map_err(|e| ConnectionError(format!("Failed to accept connection: {:?}", e)))?;
 
         // If WebTransport is enabled, check ALPN to dispatch
         #[cfg(feature = "kynet-wtransport")]
         {
-            let alpn = quinn_conn.handshake_data().and_then(|data| {
-                data.downcast::<quinn::crypto::rustls::HandshakeData>()
-                    .ok()
-                    .and_then(|h| h.protocol.clone())
-            });
+            let alpn = quinn_connecting
+                .handshake_data()
+                .await
+                .ok()
+                .and_then(|data| {
+                    data.downcast::<quinn::crypto::rustls::HandshakeData>()
+                        .ok()
+                        .and_then(|h| h.protocol.clone())
+                });
 
             if alpn.as_deref() == Some(wtransport_proto::WEBTRANSPORT_ALPN) {
                 // WebTransport connection (ALPN: "h3")
                 let session_request =
-                    wtransport::endpoint::IncomingSessionFuture::accept_from_connection(quinn_conn)
-                        .await
-                        .map_err(|e| {
-                            ConnectionError(format!("WebTransport accept failed: {:?}", e))
-                        })?;
+                    wtransport::endpoint::IncomingSessionFuture::with_quic_connecting(
+                        quinn_connecting,
+                    )
+                    .await
+                    .map_err(|e| ConnectionError(format!("WebTransport accept failed: {:?}", e)))?;
 
                 let wt_conn = session_request.accept().await.map_err(|e| {
                     ConnectionError(format!("WebTransport session accept failed: {:?}", e))
@@ -140,7 +145,10 @@ impl super::Server for CommonServer {
         }
 
         // Kymux over QUIC connection (ALPN: "kymux" or no WebTransport support)
-        Ok(quinn_conn.into())
+        let quinn_connection = quinn_connecting
+            .await
+            .map_err(|e| ConnectionError(format!("Connection failed: {:?}", e)))?;
+        Ok(quinn_connection.into())
     }
 
     fn close(&self, error_code: u32, reason: &str) {

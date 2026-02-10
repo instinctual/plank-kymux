@@ -34,10 +34,7 @@ use crate::driver::wtransport::WTransportConnectionDriver;
 use std::fmt::Debug;
 use std::time::Duration;
 
-#[cfg(all(
-    any(feature = "kynet-quinn", feature = "kynet-wtransport"),
-    not(target_family = "wasm")
-))]
+#[cfg(all(feature = "kynet-quinn", not(target_family = "wasm")))]
 use std::net::SocketAddr;
 
 use bytes::Bytes;

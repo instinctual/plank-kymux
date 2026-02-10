@@ -44,8 +44,8 @@ web-sys = { version = "=0.3.77", optional = true, features = [
     "WritableStreamDefaultWriter",
 ] }
 
-wtransport = { git = "https://github.com/IwanBurel/wtransport", rev = "8de1a86ae972baaa6ef17759b65f4f86c4fa3677", package = "wtransport", features = ["quinn"], optional = true }
-wtransport-proto = { git = "https://github.com/IwanBurel/wtransport", rev = "8de1a86ae972baaa6ef17759b65f4f86c4fa3677", package = "wtransport-proto", optional = true }
+wtransport = { version = "0.7.0", features = ["quinn"], optional = true }
+wtransport-proto = { version = "0.7.0", optional = true }
 
 # https://doc.rust-lang.org/cargo/reference/features.html#optional-dependencies
 [features]
