@@ -23,7 +23,7 @@ use crate::router::KyChannel;
 use crate::runtime::{self, Duration, SystemTime, UNIX_EPOCH};
 use crate::ProtocolError;
 
-use bytes::{Buf, BufMut, BytesMut};
+use bytes::{Buf, BufMut, Bytes, BytesMut};
 
 #[derive(Debug)]
 pub struct ClockSyncResult {
@@ -60,6 +60,36 @@ impl ClockSyncAverage {
     pub fn delay_micros(&self) -> i64 {
         self.delay_micros
     }
+}
+
+fn validate_sync_response(
+    response: &Bytes,
+    expected_endpoint_id: u16,
+) -> Result<(), ProtocolError> {
+    if response.len() != 30 {
+        return Err(ProtocolError::new(format!(
+            "expected 30 byte clock sync response, got {}",
+            response.len()
+        )));
+    }
+    let endpoint_id = u16::from_be_bytes([response[0], response[1]]);
+    if endpoint_id != expected_endpoint_id {
+        return Err(ProtocolError::new(format!(
+            "clock sync endpoint id mismatch: expected {}, got {}",
+            expected_endpoint_id, endpoint_id
+        )));
+    }
+    Ok(())
+}
+
+fn validate_sync_request(datagram: &Bytes) -> Result<(), ProtocolError> {
+    if datagram.len() != 14 {
+        return Err(ProtocolError::new(format!(
+            "expected 14 byte clock sync request, got {}",
+            datagram.len()
+        )));
+    }
+    Ok(())
 }
 
 pub struct ClockSyncClientProtocol {
@@ -107,10 +137,9 @@ impl ClockSyncClientProtocol {
                 // t1: 8 bytes
                 // t2: 8 bytes
                 // t3: 8 bytes
-                assert!(response.len() == 30);
+                validate_sync_response(&response, self.ky_channel.endpoint_id())?;
                 let t4 = clock::now_micros().map_err(ProtocolError::new)?;
                 let endpoint_id = response.get_u16();
-                assert!(endpoint_id == self.ky_channel.endpoint_id());
                 let id = response.get_u32();
                 if req_id == id {
                     let t1 = response.get_i64();
@@ -167,7 +196,7 @@ impl ClockSyncServerProtocol {
             // endpoint_id: 2 bytes
             // req_id: 4 bytes
             // t1: 8 bytes
-            assert!(datagram.len() == 14);
+            validate_sync_request(&datagram)?;
             let t2 = clock::now_micros().map_err(ProtocolError::new)?;
 
             let mut buf = BytesMut::with_capacity(30);
@@ -182,5 +211,61 @@ impl ClockSyncServerProtocol {
                 .await
                 .map_err(ProtocolError::new)?;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bytes::{BufMut, Bytes, BytesMut};
+
+    #[test]
+    fn client_response_wrong_length_returns_error() {
+        // A response that is too short (10 bytes instead of 30)
+        let response = Bytes::from(vec![0u8; 10]);
+        let result = validate_sync_response(&response, 0x0001);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn client_response_wrong_endpoint_id_returns_error() {
+        // A 30-byte response with endpoint_id=0x0002 but expected 0x0001
+        let mut buf = BytesMut::with_capacity(30);
+        buf.put_u16(0x0002); // wrong endpoint_id
+        buf.put_u32(0); // req_id
+        buf.put_i64(0); // t1
+        buf.put_i64(0); // t2
+        buf.put_i64(0); // t3
+        let response = buf.freeze();
+        let result = validate_sync_response(&response, 0x0001);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn client_response_valid_returns_ok() {
+        let mut buf = BytesMut::with_capacity(30);
+        buf.put_u16(0x0001); // correct endpoint_id
+        buf.put_u32(0); // req_id
+        buf.put_i64(100); // t1
+        buf.put_i64(200); // t2
+        buf.put_i64(300); // t3
+        let response = buf.freeze();
+        let result = validate_sync_response(&response, 0x0001);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn server_request_wrong_length_returns_error() {
+        // A datagram that is too short (5 bytes instead of 14)
+        let datagram = Bytes::from(vec![0u8; 5]);
+        let result = validate_sync_request(&datagram);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn server_request_valid_returns_ok() {
+        let datagram = Bytes::from(vec![0u8; 14]);
+        let result = validate_sync_request(&datagram);
+        assert!(result.is_ok());
     }
 }
