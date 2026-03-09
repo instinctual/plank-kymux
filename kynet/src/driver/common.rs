@@ -27,6 +27,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use socket2::{Domain, Protocol, Socket, Type};
 
 use super::quinn::KYMUX_ALPN;
 
@@ -80,9 +81,34 @@ impl CommonServer {
         transport_config.keep_alive_interval(options.keep_alive_interval);
         server_config.transport_config(Arc::new(transport_config));
 
-        // Create Quinn endpoint
-        let quinn_endpoint = quinn::Endpoint::server(server_config, addr)
-            .map_err(|e| ConnectionError(format!("Failed to create endpoint: {:?}", e)))?;
+        // Create UDP socket with dual-stack support when binding to IPv6.
+        // quinn::Endpoint::server() doesn't set IPV6_V6ONLY=false, which means
+        // on Windows an IPv6 socket won't accept IPv4 connections. We replicate
+        // the approach used by quinn's client() method (see quinn endpoint.rs).
+        let domain = Domain::for_address(addr);
+        let socket = Socket::new(domain, Type::DGRAM, Some(Protocol::UDP))
+            .map_err(|e| ConnectionError(format!("Socket creation failed: {e:?}")))?;
+
+        if addr.is_ipv6() {
+            if let Err(e) = socket.set_only_v6(false) {
+                log::debug!("Unable to make socket dual-stack: {e}");
+            }
+        }
+
+        socket
+            .bind(&addr.into())
+            .map_err(|e| ConnectionError(format!("Socket bind failed: {e:?}")))?;
+
+        let udp_socket: std::net::UdpSocket = socket.into();
+        let runtime = Arc::new(quinn::TokioRuntime);
+
+        let quinn_endpoint = quinn::Endpoint::new(
+            quinn::EndpointConfig::default(),
+            Some(server_config),
+            udp_socket,
+            runtime,
+        )
+        .map_err(|e| ConnectionError(format!("Failed to create endpoint: {:?}", e)))?;
 
         Ok(Self {
             quinn_endpoint: Arc::new(quinn_endpoint),
