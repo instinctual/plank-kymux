@@ -92,7 +92,7 @@ impl<T> ProtocolRecv<T> {
 
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
-pub trait ProtocolEndpoint: kyutil::KySend {
+pub trait ProtocolEndpointDriver: kyutil::KySend {
     type Protocol;
 
     fn id(&self) -> u16;
@@ -106,6 +106,35 @@ pub trait ProtocolEndpoint: kyutil::KySend {
         Self: Sized + 'static,
     {
         Box::new(self).ready_boxed().await
+    }
+}
+
+pub struct ProtocolEndpoint<T> {
+    driver: Box<dyn ProtocolEndpointDriver<Protocol = T>>,
+}
+
+impl<T> ProtocolEndpoint<T> {
+    pub fn new(driver: impl ProtocolEndpointDriver<Protocol = T> + 'static) -> Self {
+        Self {
+            driver: Box::new(driver),
+        }
+    }
+
+    pub fn id(&self) -> u16 {
+        self.driver.id()
+    }
+
+    pub async fn ready(self) -> Result<T, ProtocolError> {
+        self.driver.ready_boxed().await
+    }
+}
+
+impl<T, D> From<D> for ProtocolEndpoint<T>
+where
+    D: ProtocolEndpointDriver<Protocol = T> + 'static,
+{
+    fn from(driver: D) -> Self {
+        Self::new(driver)
     }
 }
 
@@ -142,3 +171,12 @@ pub struct MetricsServerProtocol {
 pub struct MetricsClientProtocol {
     pub recv: ProtocolRecv<MetricsPacket>,
 }
+
+pub type VideoServerEndpoint = ProtocolEndpoint<VideoServerProtocol>;
+pub type VideoClientEndpoint = ProtocolEndpoint<VideoClientProtocol>;
+pub type AudioServerEndpoint = ProtocolEndpoint<AudioServerProtocol>;
+pub type AudioClientEndpoint = ProtocolEndpoint<AudioClientProtocol>;
+pub type InputEndpoint = ProtocolEndpoint<InputProtocol>;
+pub type DataEndpoint = ProtocolEndpoint<DataProtocol>;
+pub type MetricsServerEndpoint = ProtocolEndpoint<MetricsServerProtocol>;
+pub type MetricsClientEndpoint = ProtocolEndpoint<MetricsClientProtocol>;

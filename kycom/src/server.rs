@@ -85,10 +85,10 @@ impl KyCom {
         Err(std::io::Error::from(std::io::ErrorKind::AddrInUse))
     }
 
-    pub fn register<T>(&self, endpoint: T) -> std::io::Result<TcpForwarder<T::Protocol>>
-    where
-        T: types::ProtocolEndpoint + 'static,
-    {
+    pub fn register<T>(
+        &self,
+        endpoint: types::ProtocolEndpoint<T>,
+    ) -> std::io::Result<TcpForwarder<T>> {
         let rx = {
             let endpoint_id = endpoint.id();
             let mut pending_endpoints = self.pending_endpoints.lock().unwrap();
@@ -110,7 +110,7 @@ impl KyCom {
         Ok(TcpForwarder {
             addr: self.addr,
             rx,
-            endpoint: Box::new(endpoint),
+            endpoint,
         })
     }
 
@@ -131,13 +131,12 @@ impl KyCom {
         addr
     }
 
-    pub fn register_and_forward<Endpoint>(
+    pub fn register_and_forward<T: 'static>(
         &mut self,
-        endpoint: Endpoint,
+        endpoint: types::ProtocolEndpoint<T>,
     ) -> std::io::Result<KyComAddr>
     where
-        Endpoint: types::ProtocolEndpoint + 'static,
-        TcpForwarder<Endpoint::Protocol>: Forwarder,
+        TcpForwarder<T>: Forwarder,
     {
         let forwarder = self.register(endpoint)?;
         let addr = self.forward_async(forwarder);
@@ -268,7 +267,7 @@ pub async fn forward_protocol_bi<TX: Send + 'static, RX: Send + 'static>(
 pub struct TcpForwarder<P> {
     addr: SocketAddr,
     rx: oneshot::Receiver<TcpStream>,
-    endpoint: Box<dyn types::ProtocolEndpoint<Protocol = P>>,
+    endpoint: types::ProtocolEndpoint<P>,
 }
 
 impl<P> TcpForwarder<P> {
@@ -282,7 +281,7 @@ impl<P> TcpForwarder<P> {
             .await
             .map_err(|_| ProtocolError::new("TcpStream sender dropped"))?;
 
-        let protocol = self.endpoint.ready_boxed().await?;
+        let protocol = self.endpoint.ready().await?;
         tcp_stream
             .write_all(&[0])
             .await

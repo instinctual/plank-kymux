@@ -18,10 +18,11 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use kyproto::{AudioProtocol, MetricsClientEndpoint, ProtocolEndpoint, VideoProtocol};
 use std::sync::Arc;
 
 use kycom::{Forwarder, TcpForwarder};
+use kymux_types::*;
+use kyproto::{AudioProtocol, VideoProtocol};
 
 use crate::{Error, Result};
 
@@ -41,10 +42,12 @@ impl IpcHandler {
         self.kycom.stop();
     }
 
-    pub fn register_and_forward<Endpoint>(&mut self, endpoint: Endpoint) -> Result<String>
+    pub fn register_and_forward<T: 'static>(
+        &mut self,
+        endpoint: ProtocolEndpoint<T>,
+    ) -> Result<String>
     where
-        Endpoint: ProtocolEndpoint + 'static,
-        TcpForwarder<Endpoint::Protocol>: Forwarder,
+        TcpForwarder<T>: Forwarder,
     {
         let url = self
             .kycom

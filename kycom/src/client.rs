@@ -22,7 +22,7 @@ use crate::{ipc, serial, KyComAddr};
 
 use async_trait::async_trait;
 use kymux_types as types;
-use kymux_types::{ProtocolEndpoint, ProtocolError};
+use kymux_types::ProtocolError;
 #[allow(unused)]
 use log::{debug, error, info, warn};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -50,7 +50,7 @@ impl VideoClientEndpoint {
 }
 
 #[async_trait]
-impl ProtocolEndpoint for VideoClientEndpoint {
+impl types::ProtocolEndpointDriver for VideoClientEndpoint {
     type Protocol = types::VideoClientProtocol;
 
     fn id(&self) -> u16 {
@@ -77,7 +77,7 @@ impl VideoServerEndpoint {
 }
 
 #[async_trait]
-impl ProtocolEndpoint for VideoServerEndpoint {
+impl types::ProtocolEndpointDriver for VideoServerEndpoint {
     type Protocol = types::VideoServerProtocol;
 
     fn id(&self) -> u16 {
@@ -104,7 +104,7 @@ impl DataEndpoint {
 }
 
 #[async_trait]
-impl ProtocolEndpoint for DataEndpoint {
+impl types::ProtocolEndpointDriver for DataEndpoint {
     type Protocol = types::DataProtocol;
 
     fn id(&self) -> u16 {
@@ -135,7 +135,7 @@ impl InputEndpoint {
 }
 
 #[async_trait]
-impl ProtocolEndpoint for InputEndpoint {
+impl types::ProtocolEndpointDriver for InputEndpoint {
     type Protocol = types::InputProtocol;
 
     fn id(&self) -> u16 {
@@ -166,7 +166,7 @@ impl MetricsClientEndpoint {
 }
 
 #[async_trait]
-impl ProtocolEndpoint for MetricsClientEndpoint {
+impl types::ProtocolEndpointDriver for MetricsClientEndpoint {
     type Protocol = types::MetricsClientProtocol;
 
     fn id(&self) -> u16 {
@@ -194,7 +194,7 @@ impl MetricsServerEndpoint {
 }
 
 #[async_trait]
-impl ProtocolEndpoint for MetricsServerEndpoint {
+impl types::ProtocolEndpointDriver for MetricsServerEndpoint {
     type Protocol = types::MetricsServerProtocol;
 
     fn id(&self) -> u16 {

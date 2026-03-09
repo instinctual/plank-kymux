@@ -24,6 +24,10 @@ use crate::runtime::{self, Duration, SystemTime, UNIX_EPOCH};
 use crate::ProtocolError;
 
 use bytes::{Buf, BufMut, Bytes, BytesMut};
+use kymux_types as types;
+
+pub type ClockSyncServerEndpoint = types::ProtocolEndpoint<ClockSyncServerProtocol>;
+pub type ClockSyncClientEndpoint = types::ProtocolEndpoint<ClockSyncClientProtocol>;
 
 #[derive(Debug)]
 pub struct ClockSyncResult {
