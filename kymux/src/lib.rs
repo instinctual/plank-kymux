@@ -20,9 +20,6 @@
 
 mod error;
 
-#[cfg(feature = "ipc")]
-pub mod ipc;
-
 use std::time::Duration;
 
 pub use error::{Error, Result};
