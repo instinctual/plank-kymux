@@ -95,10 +95,10 @@ impl Connection {
     pub async fn quinn_connect(
         addr: SocketAddr,
         server_name: &str,
-        certs: Option<cert::RootCertStore>,
+        tls_config: Option<rustls::ClientConfig>,
         options: &quinn::QuinnClientOptions,
     ) -> Result<Self, ConnectionError> {
-        QuinnConnectionDriver::connect(addr, server_name, certs, options).await
+        QuinnConnectionDriver::connect(addr, server_name, tls_config, options).await
     }
 
     #[cfg(all(feature = "kynet-wtransport", not(target_family = "wasm")))]

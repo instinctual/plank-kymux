@@ -485,10 +485,10 @@ impl Connection {
     pub async fn quinn_connect(
         addr: SocketAddr,
         server_name: &str,
-        certs: Option<cert::RootCertStore>,
+        tls_config: Option<rustls::ClientConfig>,
         options: &quinn::QuinnClientOptions,
     ) -> Result<Self, ConnectionError> {
-        let conn = kynet::Connection::quinn_connect(addr, server_name, certs, options).await?;
+        let conn = kynet::Connection::quinn_connect(addr, server_name, tls_config, options).await?;
         Self::connect(conn).await
     }
 
@@ -496,11 +496,11 @@ impl Connection {
     pub async fn quinn_connect_with_auth(
         addr: SocketAddr,
         server_name: &str,
-        certs: Option<cert::RootCertStore>,
+        tls_config: Option<rustls::ClientConfig>,
         options: &quinn::QuinnClientOptions,
         auth: &ClientAuth,
     ) -> Result<Self, ConnectionError> {
-        let conn = kynet::Connection::quinn_connect(addr, server_name, certs, options).await?;
+        let conn = kynet::Connection::quinn_connect(addr, server_name, tls_config, options).await?;
         Self::connect_with_auth(conn, auth).await
     }
 

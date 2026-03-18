@@ -57,6 +57,7 @@ kynet-quinn = [
     "dep:ring",
     "dep:rustls",
     "dep:rustls-pemfile",
+    "dep:rustls-platform-verifier",
     "tokio/fs",
 ]
 kynet-webtransport-js = [

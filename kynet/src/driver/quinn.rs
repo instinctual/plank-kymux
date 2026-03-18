@@ -18,7 +18,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use crate::cert::RootCertStore;
 use crate::error::*;
 use crate::{
     Connection, ConnectionDriver, ConnectionStats, RecvStream, RecvStreamDriver, SendStream,
@@ -31,6 +30,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use bytes::Bytes;
+use rustls_platform_verifier::ConfigVerifierExt;
 
 /// ALPN protocol identifier for Kymux protocol over standard QUIC.
 pub const KYMUX_ALPN: &[u8] = b"kymux";
@@ -138,31 +138,22 @@ impl QuinnConnectionDriver {
     pub async fn connect(
         addr: SocketAddr,
         server_name: &str,
-        certs: Option<RootCertStore>,
+        tls_config: Option<rustls::ClientConfig>,
         options: &QuinnClientOptions,
     ) -> Result<Connection, ConnectionError> {
-        // Build rustls ClientConfig
-        // Priority: certificate_hash > root_certs > error
-        let tls_config = if let Some(ref hash) = options.certificate_hash {
-            // Use hash-based verification (similar to WebTransport's serverCertificateHashes)
+        let mut tls_config = if let Some(ref hash) = options.certificate_hash {
             let verifier = HashCertVerifier::new(hash)?;
             rustls::ClientConfig::builder()
                 .dangerous()
                 .with_custom_certificate_verifier(Arc::new(verifier))
                 .with_no_client_auth()
-        } else if let Some(certs) = certs {
-            // Use CA chain validation
-            rustls::ClientConfig::builder()
-                .with_root_certificates(certs)
-                .with_no_client_auth()
+        } else if let Some(tls_config) = tls_config {
+            tls_config
         } else {
-            return Err(ConnectionError(
-                "Cannot connect: no certificate hash or root certificates provided".to_string(),
-            ));
+            rustls::ClientConfig::with_platform_verifier()
+                .map_err(|e| ConnectionError(format!("Platform verifier error: {e}")))?
         };
 
-        // Set ALPN for Kymux protocol over QUIC
-        let mut tls_config = tls_config;
         tls_config.alpn_protocols = vec![KYMUX_ALPN.to_vec()];
 
         // Create Quinn client config

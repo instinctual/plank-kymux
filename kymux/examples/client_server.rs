@@ -119,9 +119,12 @@ async fn main() {
         .parse()
         .unwrap();
 
+    let tls_config = rustls::ClientConfig::builder()
+        .with_root_certificates(keys.certs_store)
+        .with_no_client_auth();
     let client_config = kymux::ClientConfig::Quic {
         addr: client_addr,
-        roots: Some(keys.certs_store),
+        tls_config: Some(tls_config),
         server_name: SERVER_NAME.into(),
         certificate_hash: None,
     };

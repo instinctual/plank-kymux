@@ -93,9 +93,12 @@ async fn create_connection() -> (IPCForwardableConnection, IPCForwardableConnect
     };
 
     let client_connect = async move {
+        let tls_config = rustls::ClientConfig::builder()
+            .with_root_certificates(keys.certs_store)
+            .with_no_client_auth();
         let config = kymux::ClientConfig::Quic {
             addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), PORT),
-            roots: Some(keys.certs_store),
+            tls_config: Some(tls_config),
             server_name: SERVER_NAME.into(),
             certificate_hash: None,
         };

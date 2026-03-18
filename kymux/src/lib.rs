@@ -51,7 +51,7 @@ pub enum ClientConfig {
     #[cfg(feature = "backend-quinn")]
     Quic {
         addr: std::net::SocketAddr,
-        roots: Option<rustls::RootCertStore>,
+        tls_config: Option<rustls::ClientConfig>,
         server_name: String,
         /// SHA-256 hash of the expected server certificate (hex encoded).
         /// If provided, the server certificate will be validated by comparing its hash
@@ -116,7 +116,7 @@ async fn connect_internal(
         #[cfg(feature = "backend-quinn")]
         ClientConfig::Quic {
             addr,
-            roots,
+            tls_config,
             server_name,
             certificate_hash,
         } => {
@@ -130,13 +130,13 @@ async fn connect_internal(
                 kyproto::Connection::quinn_connect_with_auth(
                     addr,
                     &server_name,
-                    roots,
+                    tls_config,
                     &options,
                     credentials,
                 )
                 .await?
             } else {
-                kyproto::Connection::quinn_connect(addr, &server_name, roots, &options).await?
+                kyproto::Connection::quinn_connect(addr, &server_name, tls_config, &options).await?
             };
 
             Ok(kyproto)
