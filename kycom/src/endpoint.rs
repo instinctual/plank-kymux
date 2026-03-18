@@ -29,14 +29,26 @@ use log::{debug, error, info, warn};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::oneshot;
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) enum ChannelRole {
+    Client,
+    #[allow(unused)]
+    Server,
+}
+
 pub struct Channel {
     addr: KyComAddr,
     rx: oneshot::Receiver<std::io::Result<Connection>>,
+    role: ChannelRole,
 }
 
 impl Channel {
-    pub(crate) fn new(addr: KyComAddr, rx: oneshot::Receiver<std::io::Result<Connection>>) -> Self {
-        Self { addr, rx }
+    pub(crate) fn new(
+        addr: KyComAddr,
+        rx: oneshot::Receiver<std::io::Result<Connection>>,
+        role: ChannelRole,
+    ) -> Self {
+        Self { addr, rx, role }
     }
 
     pub fn addr(&self) -> KyComAddr {
@@ -50,7 +62,7 @@ impl Channel {
             let _ = tx.send(result_connection);
         });
 
-        Self::new(addr, rx)
+        Self::new(addr, rx, ChannelRole::Client)
     }
 
     async fn ready_internal(self) -> std::io::Result<Connection> {
@@ -62,8 +74,12 @@ impl Channel {
         let mut connection = connection?;
 
         assert!(connection.addr.endpoint_id == endpoint_id);
-        connection.write_u16(endpoint_id).await?;
-        connection.read_u8().await?;
+        if self.role == ChannelRole::Client {
+            connection.write_u16(endpoint_id).await?;
+            connection.read_u8().await?;
+        } else {
+            connection.write_all(&[0]).await?;
+        }
 
         Ok(connection)
     }
