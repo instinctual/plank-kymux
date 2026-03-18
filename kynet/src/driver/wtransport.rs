@@ -18,7 +18,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use crate::cert::RootCertStore;
 use crate::error::*;
 use crate::{
     Connection, ConnectionDriver, ConnectionStats, RecvStream, RecvStreamDriver, SendStream,
@@ -29,6 +28,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use bytes::Bytes;
+use rustls_platform_verifier::ConfigVerifierExt;
 
 impl From<wtransport::Connection> for Connection {
     fn from(value: wtransport::Connection) -> Self {
@@ -54,24 +54,15 @@ impl WTransportConnectionDriver {
 
     pub async fn connect(
         url: &str,
-        certs: Option<RootCertStore>,
+        tls_config: Option<rustls::ClientConfig>,
         options: &WTransportClientOptions,
     ) -> Result<Connection, ConnectionError> {
-        let certs = if let Some(certs) = certs {
-            certs
+        let mut tls_config = if let Some(tls_config) = tls_config {
+            tls_config
         } else {
-            let mut cert_store = RootCertStore::empty();
-
-            for cert in rustls_native_certs::load_native_certs().certs {
-                cert_store.add(cert)?;
-            }
-
-            cert_store
+            rustls::ClientConfig::with_platform_verifier()
+                .map_err(|e| ConnectionError(format!("Platform verifier error: {e}")))?
         };
-
-        let mut tls_config = rustls::ClientConfig::builder()
-            .with_root_certificates(certs)
-            .with_no_client_auth();
         tls_config.alpn_protocols = vec![wtransport_proto::WEBTRANSPORT_ALPN.to_vec()];
 
         let config = wtransport::ClientConfig::builder()

@@ -104,10 +104,10 @@ impl Connection {
     #[cfg(all(feature = "kynet-wtransport", not(target_family = "wasm")))]
     pub async fn wtransport_connect(
         url: &str,
-        certs: Option<cert::RootCertStore>,
+        tls_config: Option<rustls::ClientConfig>,
         options: &wtransport::WTransportClientOptions,
     ) -> Result<Self, ConnectionError> {
-        WTransportConnectionDriver::connect(url, certs, options).await
+        WTransportConnectionDriver::connect(url, tls_config, options).await
     }
 
     #[cfg(all(feature = "kynet-webtransport-js", target_family = "wasm"))]

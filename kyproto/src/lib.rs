@@ -507,21 +507,21 @@ impl Connection {
     #[cfg(all(feature = "kynet-wtransport", not(target_family = "wasm")))]
     pub async fn wtransport_connect(
         url: &str,
-        certs: Option<cert::RootCertStore>,
+        tls_config: Option<rustls::ClientConfig>,
         options: &wtransport::WTransportClientOptions,
     ) -> Result<Self, ConnectionError> {
-        let conn = kynet::Connection::wtransport_connect(url, certs, options).await?;
+        let conn = kynet::Connection::wtransport_connect(url, tls_config, options).await?;
         Self::connect(conn).await
     }
 
     #[cfg(all(feature = "kynet-wtransport", not(target_family = "wasm")))]
     pub async fn wtransport_connect_with_auth(
         url: &str,
-        certs: Option<cert::RootCertStore>,
+        tls_config: Option<rustls::ClientConfig>,
         options: &wtransport::WTransportClientOptions,
         auth: &ClientAuth,
     ) -> Result<Self, ConnectionError> {
-        let conn = kynet::Connection::wtransport_connect(url, certs, options).await?;
+        let conn = kynet::Connection::wtransport_connect(url, tls_config, options).await?;
         Self::connect_with_auth(conn, auth).await
     }
 

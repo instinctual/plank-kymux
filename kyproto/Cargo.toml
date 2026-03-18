@@ -17,6 +17,7 @@ kymux-types = { path = "../kymux-types" }
 kynet = { path = "../kynet", optional = true }
 kyutil = { path = "../kyutil" }
 kywasmtime = { git = "https://github.com/rom1v/kywasmtime.git", tag = "0.1", optional = true }
+rustls = { version = "=0.23.31", optional = true, default-features = false, features = ["logging", "std", "tls12"] }
 log = "0.4.20"
 raptorq = "1.7.0"
 rmp-serde = "1.1.2"
@@ -44,5 +45,5 @@ js = [
 ]
 kynet-quinn = ["kynet/kynet-quinn"]
 kynet-webtransport-js = ["kynet/kynet-webtransport-js"]
-kynet-wtransport = ["kynet/kynet-wtransport"]
+kynet-wtransport = ["kynet/kynet-wtransport", "dep:rustls"]
 tokio-rt = ["dep:tokio"]
