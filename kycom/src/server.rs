@@ -96,7 +96,7 @@ impl KyCom {
                 Entry::Occupied(_) => {
                     return Err(Error::new(
                         ErrorKind::AlreadyExists,
-                        "Endpoint {endpoint_id} already pending",
+                        format!("Endpoint {endpoint_id} already pending"),
                     ));
                 }
                 Entry::Vacant(entry) => {
