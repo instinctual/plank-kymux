@@ -31,6 +31,10 @@ pub use kyproto;
 
 #[allow(dead_code)]
 const KEEP_ALIVE_INTERVAL: Duration = Duration::from_secs(5);
+// Must be greater than KEEP_ALIVE_INTERVAL, otherwise healthy connections
+// get killed between pings.
+#[cfg(feature = "server")]
+const MAX_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[cfg(feature = "server")]
 pub struct ServerConfig {
@@ -77,7 +81,7 @@ impl Server {
             config.private_key,
             &kyproto::common::CommonServerOptions {
                 keep_alive_interval: Some(KEEP_ALIVE_INTERVAL),
-                ..Default::default()
+                max_idle_timeout: Some(MAX_IDLE_TIMEOUT),
             },
         )?;
 
