@@ -32,7 +32,6 @@ use tokio::sync::oneshot;
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) enum ChannelRole {
     Client,
-    #[allow(unused)]
     Server,
 }
 

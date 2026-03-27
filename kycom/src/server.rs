@@ -19,9 +19,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use crate::connection::{Connection, Server};
-use crate::endpoint::Channel;
-use crate::ipc;
-use crate::serial;
+use crate::endpoint::{Channel, ChannelRole};
 use crate::KyComAddr;
 
 use async_trait::async_trait;
@@ -34,7 +32,6 @@ use std::collections::HashMap;
 use std::io::{Error, ErrorKind};
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
-use tokio::io::AsyncWriteExt;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
@@ -105,46 +102,24 @@ impl KyCom {
         };
 
         let addr = KyComAddr::new(self.addr, endpoint_id);
-        let channel = Channel::new(addr, rx);
+        let channel = Channel::new(addr, rx, ChannelRole::Server);
         Ok(channel)
     }
 
     pub fn register<T>(
         &self,
         endpoint: types::ProtocolEndpoint<T>,
-    ) -> std::io::Result<TcpForwarder<T>> {
-        let rx = {
-            let endpoint_id = endpoint.id();
-            let mut pending_endpoints = self.pending_endpoints.lock().unwrap();
-            let Some(pending_endpoints) = pending_endpoints.as_mut() else {
-                return Err(ErrorKind::ConnectionAborted.into());
-            };
-            match pending_endpoints.entry(endpoint_id) {
-                Entry::Occupied(_) => {
-                    return Err(Error::new(
-                        ErrorKind::AlreadyExists,
-                        format!("Endpoint {endpoint_id} already pending"),
-                    ));
-                }
-                Entry::Vacant(entry) => {
-                    let (tx, rx) = oneshot::channel();
-                    entry.insert(tx);
-                    rx
-                }
-            }
-        };
+    ) -> std::io::Result<ChannelForwarder<T>> {
+        let endpoint_id = endpoint.id();
+        let channel = self.register_channel(endpoint_id)?;
 
-        Ok(TcpForwarder {
-            addr: self.addr,
-            rx,
-            endpoint,
-        })
+        Ok(ChannelForwarder { channel, endpoint })
     }
 
-    pub fn forward_async<P>(&mut self, forwarder: TcpForwarder<P>) -> KyComAddr
+    pub fn forward_async<P>(&mut self, forwarder: ChannelForwarder<P>) -> KyComAddr
     where
         P: 'static,
-        TcpForwarder<P>: Forwarder,
+        ChannelForwarder<P>: Forwarder,
     {
         let addr = forwarder.addr();
 
@@ -163,7 +138,7 @@ impl KyCom {
         endpoint: types::ProtocolEndpoint<T>,
     ) -> std::io::Result<KyComAddr>
     where
-        TcpForwarder<T>: Forwarder,
+        ChannelForwarder<T>: Forwarder,
     {
         let forwarder = self.register(endpoint)?;
         let addr = self.forward_async(forwarder);
@@ -290,31 +265,14 @@ pub async fn forward_protocol_bi<TX: Send + 'static, RX: Send + 'static>(
     .map_err(ProtocolError::new)
 }
 
-pub struct TcpForwarder<P> {
-    addr: SocketAddr,
-    rx: oneshot::Receiver<std::io::Result<Connection>>,
+pub struct ChannelForwarder<P> {
+    channel: Channel,
     endpoint: types::ProtocolEndpoint<P>,
 }
 
-impl<P> TcpForwarder<P> {
+impl<P> ChannelForwarder<P> {
     pub fn addr(&self) -> KyComAddr {
-        KyComAddr::new(self.addr, self.endpoint.id())
-    }
-
-    async fn start(self) -> Result<(Connection, P), ProtocolError> {
-        let mut connection = self
-            .rx
-            .await
-            .map_err(|_| ProtocolError::new("Connection sender dropped"))?
-            .map_err(ProtocolError::new)?;
-
-        let protocol = self.endpoint.ready().await?;
-        connection
-            .write_all(&[0])
-            .await
-            .map_err(ProtocolError::new)?;
-
-        Ok((connection, protocol))
+        self.channel.addr()
     }
 }
 
@@ -324,74 +282,64 @@ pub trait Forwarder {
 }
 
 #[async_trait]
-impl Forwarder for TcpForwarder<types::VideoClientProtocol> {
+impl Forwarder for ChannelForwarder<types::VideoClientProtocol> {
     async fn forward(self) -> Result<(), ProtocolError> {
-        let (connection, protocol) = self.start().await?;
-        let ipc = ipc::create_send_protocol(connection, serial::av::AVPacketSerializer);
-        forward_protocol(protocol.recv, ipc).await
+        let protocol = self.endpoint.ready().await?;
+        let ipc = self.channel.into_video_server_endpoint().ready().await?;
+        forward_protocol(protocol.recv, ipc.send).await
     }
 }
 
 #[async_trait]
-impl Forwarder for TcpForwarder<types::VideoServerProtocol> {
+impl Forwarder for ChannelForwarder<types::VideoServerProtocol> {
     async fn forward(self) -> Result<(), ProtocolError> {
-        let (connection, protocol) = self.start().await?;
-        let ipc = ipc::create_recv_protocol(connection, serial::av::AVPacketDeserializer);
-        forward_protocol(ipc, protocol.send).await
+        let protocol = self.endpoint.ready().await?;
+        let ipc = self.channel.into_video_client_endpoint().ready().await?;
+        forward_protocol(ipc.recv, protocol.send).await
     }
 }
 
 #[async_trait]
-impl Forwarder for TcpForwarder<types::AudioClientProtocol> {
+impl Forwarder for ChannelForwarder<types::AudioClientProtocol> {
     async fn forward(self) -> Result<(), ProtocolError> {
-        let (connection, protocol) = self.start().await?;
-        let ipc = ipc::create_send_protocol(connection, serial::av::AVPacketSerializer);
-        forward_protocol(protocol.recv, ipc).await
+        let protocol = self.endpoint.ready().await?;
+        let ipc = self.channel.into_audio_server_endpoint().ready().await?;
+        forward_protocol(protocol.recv, ipc.send).await
     }
 }
 
 #[async_trait]
-impl Forwarder for TcpForwarder<types::AudioServerProtocol> {
+impl Forwarder for ChannelForwarder<types::AudioServerProtocol> {
     async fn forward(self) -> Result<(), ProtocolError> {
-        let (connection, protocol) = self.start().await?;
-        let ipc = ipc::create_recv_protocol(connection, serial::av::AVPacketDeserializer);
-        forward_protocol(ipc, protocol.send).await
+        let protocol = self.endpoint.ready().await?;
+        let ipc = self.channel.into_audio_client_endpoint().ready().await?;
+        forward_protocol(ipc.recv, protocol.send).await
     }
 }
 
 #[async_trait]
-impl Forwarder for TcpForwarder<types::InputProtocol> {
+impl Forwarder for ChannelForwarder<types::InputProtocol> {
     async fn forward(self) -> Result<(), ProtocolError> {
-        let (connection, protocol) = self.start().await?;
-        let (ipc_send, ipc_recv) = ipc::create_bi_protocol(
-            connection.read,
-            connection.write,
-            serial::input::InputPacketSerializer,
-            serial::input::InputPacketDeserializer,
-        );
-        forward_protocol_bi(protocol.send, protocol.recv, ipc_send, ipc_recv).await
+        let protocol = self.endpoint.ready().await?;
+        let ipc = self.channel.into_input_endpoint().ready().await?;
+        forward_protocol_bi(protocol.send, protocol.recv, ipc.send, ipc.recv).await
     }
 }
 
 #[async_trait]
-impl Forwarder for TcpForwarder<types::DataProtocol> {
+impl Forwarder for ChannelForwarder<types::DataProtocol> {
     async fn forward(self) -> Result<(), ProtocolError> {
-        let (connection, protocol) = self.start().await?;
-        let (ipc_send, ipc_recv) = ipc::create_bi_protocol(
-            connection.read,
-            connection.write,
-            serial::data::DataPacketSerializer,
-            serial::data::DataPacketDeserializer,
-        );
-        forward_protocol_bi(protocol.send, protocol.recv, ipc_send, ipc_recv).await
+        let protocol = self.endpoint.ready().await?;
+        let ipc = self.channel.into_data_endpoint().ready().await?;
+        forward_protocol_bi(protocol.send, protocol.recv, ipc.send, ipc.recv).await
     }
 }
 
 #[async_trait]
-impl Forwarder for TcpForwarder<types::MetricsServerProtocol> {
+impl Forwarder for ChannelForwarder<types::MetricsServerProtocol> {
     async fn forward(self) -> Result<(), ProtocolError> {
-        let (connection, protocol) = self.start().await?;
-        let ipc = ipc::create_recv_protocol(connection, serial::metrics::MetricsPacketDeserializer);
-        forward_protocol(ipc, protocol.send).await
+        let protocol = self.endpoint.ready().await?;
+        let ipc = self.channel.into_metrics_client_endpoint().ready().await?;
+        forward_protocol(ipc.recv, protocol.send).await
     }
 }

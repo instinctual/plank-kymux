@@ -34,7 +34,7 @@ mod server;
 
 pub use endpoint::Channel;
 pub use kymux_types::*;
-pub use server::{Forwarder, KyCom, TcpForwarder};
+pub use server::{ChannelForwarder, Forwarder, KyCom};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct KyComAddr {
