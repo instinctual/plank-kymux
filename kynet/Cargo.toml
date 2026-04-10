@@ -13,7 +13,7 @@ async-trait = "0.1.78"
 bytes = "1.5.0"
 hex = { version = "0.4", optional = true }
 js-sys = { version = "=0.3.77", optional = true }
-kyutil = { path = "../kyutil" }
+kymux-util = { path = "../kymux-util" }
 log = "0.4.21"
 quinn = { version = "=0.11.9", optional = true }
 quinn-proto = { version = "=0.11.14", optional = true }

@@ -20,7 +20,7 @@
 
 use crate::driver::{ConnectionDriver, RecvStreamDriver, SendStreamDriver};
 pub use crate::error::*;
-pub use kyutil::*;
+pub use kymux_util::*;
 
 #[cfg(all(feature = "kynet-quinn", not(target_family = "wasm")))]
 use crate::driver::quinn::QuinnConnectionDriver;

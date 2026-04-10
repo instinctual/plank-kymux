@@ -28,7 +28,7 @@ use router::{KyChannel, Router};
 
 use async_trait::async_trait;
 use kymux_types as types;
-use kyutil::*;
+use kymux_util::*;
 
 pub use auth::{ClientAuth, UnauthenticatedConnection};
 #[cfg(all(
@@ -37,7 +37,7 @@ pub use auth::{ClientAuth, UnauthenticatedConnection};
 ))]
 pub use connection::Server;
 pub use kymux_types::{ProtocolEndpoint, ProtocolError};
-pub use kyutil::DecodeHexError;
+pub use kymux_util::DecodeHexError;
 pub use protocol::clock_sync::{
     ClockSyncClientEndpoint, ClockSyncClientProtocol, ClockSyncServerEndpoint,
     ClockSyncServerProtocol,

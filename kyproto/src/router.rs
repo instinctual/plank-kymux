@@ -28,9 +28,9 @@ use std::collections::HashMap;
 use std::future::Future;
 
 use bytes::{BufMut, Bytes, BytesMut};
+use kymux_util::*;
 use kynet::error::*;
 use kynet::{Connection, ConnectionStats, RecvStream, SendStream};
-use kyutil::*;
 #[allow(unused)]
 use log::{debug, error, info, warn};
 use thiserror::Error;

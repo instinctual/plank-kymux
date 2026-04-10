@@ -7,5 +7,5 @@ edition = "2021"
 async-trait = "0.1.73"
 byteorder = "1.4.3"
 bytes = "1.4.0"
-kyutil = { version = "0.1", path = "../kyutil" }
+kymux-util = { path = "../kymux-util" }
 thiserror = "1.0.47"

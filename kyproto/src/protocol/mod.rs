@@ -27,7 +27,7 @@ use crate::{ProtocolError, ProtocolStats};
 use kymux_types::*;
 
 use async_trait::async_trait;
-use kyutil::*;
+use kymux_util::*;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 

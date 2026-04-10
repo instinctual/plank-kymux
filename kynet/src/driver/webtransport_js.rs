@@ -28,7 +28,7 @@ use std::cell::RefCell;
 
 use async_trait::async_trait;
 use bytes::Bytes;
-use kyutil::*;
+use kymux_util::*;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::{spawn_local, JsFuture};
 

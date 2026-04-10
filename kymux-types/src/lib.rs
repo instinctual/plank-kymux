@@ -29,7 +29,7 @@ pub use input::*;
 pub use metrics::*;
 
 use async_trait::async_trait;
-use kyutil::*;
+use kymux_util::*;
 use thiserror::Error;
 
 #[derive(Debug, Error, Clone)]
@@ -92,7 +92,7 @@ impl<T> ProtocolRecv<T> {
 
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
-pub trait ProtocolEndpointDriver: kyutil::KySend {
+pub trait ProtocolEndpointDriver: kymux_util::KySend {
     type Protocol;
 
     fn id(&self) -> u16;

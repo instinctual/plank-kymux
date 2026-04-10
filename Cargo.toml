@@ -6,7 +6,7 @@ members = [
     "kycom",
     "kymux",
     "kymux-types",
+    "kymux-util",
     "kynet",
     "kyproto",
-    "kyutil",
 ]
