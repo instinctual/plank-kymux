@@ -80,23 +80,26 @@ impl KyComAddr {
             return Err(invalid_data("Invalid scheme"));
         }
 
-        let host = url.host_str().ok_or_else(|| invalid_data("Missing host"))?;
+        let host = url.host().ok_or_else(|| invalid_data("Missing host"))?;
+        let ip = match host {
+            // Custom scheme don't properly parse IPv4 so they appear as a domain:
+            // https://github.com/servo/rust-url/issues/1081.
+            url::Host::Domain(domain) => domain.parse().map_err(invalid_data)?,
+            url::Host::Ipv4(ip) => ip.into(),
+            url::Host::Ipv6(ip) => ip.into(),
+        };
         let port = url.port().ok_or_else(|| invalid_data("Missing port"))?;
+        let addr = SocketAddr::new(ip, port);
 
-        let addr = format!("{host}:{port}")
-            .parse::<SocketAddr>()
-            .map_err(invalid_data)?;
-
-        let path_segments = url
+        let mut path_segments = url
             .path_segments()
-            .ok_or_else(|| invalid_data("Missing endpoint id"))?
-            .collect::<Vec<&str>>();
+            .ok_or_else(|| invalid_data("Missing endpoint id"))?;
 
-        if path_segments.len() != 1 {
+        let (Some(endpoint), None) = (path_segments.next(), path_segments.next()) else {
             return Err(invalid_data("Expected a single endpoint id"));
-        }
+        };
 
-        let endpoint_id = u16::from_str_radix(path_segments[0], 16)
+        let endpoint_id = u16::from_str_radix(endpoint, 16)
             .map_err(|e| invalid_data(format!("Invalid endpoint ID (hex): {e}")))?;
 
         Ok(Self { addr, endpoint_id })
@@ -114,10 +117,10 @@ impl FromStr for KyComAddr {
 #[cfg(test)]
 mod tests {
     use super::KyComAddr;
-    use std::net::{IpAddr, Ipv4Addr};
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
     #[test]
-    fn parse_uri() {
+    fn parse_ipv4() {
         let port: u16 = 4343;
         let endpoint_id: u16 = 0x0123;
 
@@ -125,6 +128,22 @@ mod tests {
         let addr = KyComAddr::parse(&uri).unwrap();
 
         assert_eq!(addr.addr.ip(), IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
+        assert_eq!(addr.addr.port(), port);
+        assert_eq!(addr.endpoint_id, endpoint_id);
+    }
+
+    #[test]
+    fn parse_ipv6() {
+        let port: u16 = 4343;
+        let endpoint_id: u16 = 0x0123;
+
+        let uri = format!("kymux://[::1]:{port}/{endpoint_id:X}");
+        let addr = KyComAddr::parse(&uri).unwrap();
+
+        assert_eq!(
+            addr.addr.ip(),
+            IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))
+        );
         assert_eq!(addr.addr.port(), port);
         assert_eq!(addr.endpoint_id, endpoint_id);
     }
