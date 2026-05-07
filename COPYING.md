@@ -10,5 +10,5 @@ Contributors to this project will get discounts on the commercial license.
 
 Kyber SAS will always maintain an AGPLv3 version of the project, or a similar OSI-approved license. If the company or the project are discontinued, the project will exist under an AGPLv3 license.
 
-SPDX-License-Identifier: LicenseRef-Kyber-Commercial OR AGPL-3.0
+SPDX-License-Identifier: LicenseRef-Kyber-Commercial OR AGPL-3.0-or-later
 
