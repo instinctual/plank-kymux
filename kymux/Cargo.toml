@@ -16,15 +16,15 @@ ipc = [
 ]
 backend-quinn = [
     "kynet/kynet-quinn",
-    "kyproto/kynet-quinn",
+    "dep:kyproto",
 ]
 backend-wtransport = [
     "kynet/kynet-wtransport",
-    "kyproto/kynet-wtransport",
+    "dep:kyproto",
 ]
 backend-webtransport-js = [
     "kynet/kynet-webtransport-js",
-    "kyproto/kynet-webtransport-js",
+    "dep:kyproto",
 ]
 js = [
     "kyproto/js",
