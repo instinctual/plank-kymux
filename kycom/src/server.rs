@@ -20,7 +20,7 @@
 
 use crate::connection::{Connection, Server};
 use crate::endpoint::{Channel, ChannelRole};
-use crate::{KyComAddr, Task};
+use crate::KyComAddr;
 
 use async_trait::async_trait;
 use kymux_types as types;
@@ -33,6 +33,7 @@ use std::io::{Error, ErrorKind};
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use tokio::sync::oneshot;
+use tokio::task::JoinHandle;
 
 type EndpointMap = HashMap<u16, oneshot::Sender<std::io::Result<Connection>>>;
 
@@ -40,8 +41,8 @@ pub struct KyCom {
     addr: SocketAddr,
     // Some() initially, then None once accept() fails
     pending_endpoints: Arc<Mutex<Option<EndpointMap>>>,
-    _listen_task: Task,
-    runner: Runner,
+    listen_task: JoinHandle<()>,
+    runner: Option<Runner>,
 }
 
 impl KyCom {
@@ -50,7 +51,7 @@ impl KyCom {
 
         let pending_endpoints = Arc::new(Mutex::new(Some(HashMap::new())));
         let pending_endpoints2 = pending_endpoints.clone();
-        let _listen_task = Task::spawn(async move {
+        let listen_task = tokio::spawn(async move {
             if let Err(err) = Self::listen(server, pending_endpoints2).await {
                 error!("Kycom server listener error: {err}");
             }
@@ -59,8 +60,8 @@ impl KyCom {
         Self {
             addr,
             pending_endpoints,
-            _listen_task,
-            runner: Runner::new(),
+            listen_task,
+            runner: None,
         }
     }
 
@@ -121,7 +122,14 @@ impl KyCom {
         ChannelForwarder<P>: Forwarder,
     {
         let addr = forwarder.addr();
-        self.runner.forward_async(forwarder);
+
+        if self.runner.is_none() {
+            // Create on first use
+            self.runner = Some(Runner::new());
+        }
+
+        let runner = self.runner.as_mut().unwrap();
+        runner.forward_async(forwarder);
         addr
     }
 
@@ -171,8 +179,28 @@ impl KyCom {
         }
     }
 
-    #[deprecated]
-    pub fn stop(self) {}
+    pub fn stop(mut self) {
+        // drop self
+        if let Some(runner) = self.runner.take() {
+            runner.stop();
+        }
+    }
+}
+
+impl Drop for KyCom {
+    fn drop(&mut self) {
+        self.listen_task.abort();
+    }
+}
+
+struct Task {
+    join_handle: JoinHandle<()>,
+}
+
+impl Drop for Task {
+    fn drop(&mut self) {
+        self.join_handle.abort();
+    }
 }
 
 struct Runner {
@@ -189,7 +217,7 @@ impl Runner {
         T: Forwarder + Send + 'static,
     {
         // Clean up finished tasks
-        self.tasks.retain(|task| !task.0.is_finished());
+        self.tasks.retain(|task| !task.join_handle.is_finished());
 
         let forwarder_name = std::any::type_name::<T>()
             .rsplit("::")
@@ -197,13 +225,19 @@ impl Runner {
             .unwrap_or("Unknown");
         debug!("Spawning {forwarder_name} forwarder");
 
-        let join_handle = Task::spawn(async move {
+        let join_handle = tokio::spawn(async move {
             if let Err(err) = forwarder.forward().await {
                 info!("{forwarder_name} forwarder ended with result {err:?}");
             }
         });
 
-        self.tasks.push(join_handle);
+        self.tasks.push(Task { join_handle });
+    }
+
+    pub fn stop(self) {
+        for task in self.tasks {
+            task.join_handle.abort();
+        }
     }
 }
 

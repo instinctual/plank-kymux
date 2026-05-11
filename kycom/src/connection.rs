@@ -18,7 +18,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use crate::{KyComAddr, Task};
+use crate::KyComAddr;
 #[allow(unused)]
 use log::{debug, error, info, warn};
 use std::net::{Ipv4Addr, SocketAddr};
@@ -27,6 +27,7 @@ use std::task::{Context, Poll};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, ReadBuf};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
+use tokio::task::JoinHandle;
 
 pub(crate) struct Connection {
     pub addr: KyComAddr,
@@ -81,14 +82,14 @@ impl AsyncRead for Connection {
 pub(crate) struct Server {
     pub addr: SocketAddr,
     rx: mpsc::Receiver<(TcpStream, u16)>,
-    _listen_task: Task,
+    listen_task: JoinHandle<()>,
 }
 
 impl Server {
     pub async fn start_on_addr(addr: SocketAddr) -> std::io::Result<Self> {
         let listener = TcpListener::bind(addr).await?;
         let (tx, rx) = mpsc::channel(16);
-        let _listen_task = Task::spawn(async move {
+        let listen_task = tokio::spawn(async move {
             if let Err(err) = Self::listen(listener, tx).await {
                 error!("TcpListener error: {err}");
             }
@@ -97,7 +98,7 @@ impl Server {
         Ok(Self {
             addr,
             rx,
-            _listen_task,
+            listen_task,
         })
     }
 
@@ -160,5 +161,11 @@ impl Server {
         let _ = tx.send((tcp_stream, endpoint_id)).await;
 
         Ok(())
+    }
+}
+
+impl Drop for Server {
+    fn drop(&mut self) {
+        self.listen_task.abort();
     }
 }

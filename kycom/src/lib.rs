@@ -36,20 +36,6 @@ pub use endpoint::Channel;
 pub use kymux_types::*;
 pub use server::{ChannelForwarder, Forwarder, KyCom};
 
-struct Task(tokio::task::JoinHandle<()>);
-
-impl Task {
-    fn spawn(f: impl std::future::Future<Output = ()> + Send + 'static) -> Self {
-        Self(tokio::spawn(f))
-    }
-}
-
-impl Drop for Task {
-    fn drop(&mut self) {
-        self.0.abort();
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct KyComAddr {
     pub addr: SocketAddr,
