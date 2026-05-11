@@ -4,41 +4,17 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-async-trait = "0.1.78"
-log = "0.4.21"
-rustls = { version = "0.23.31", optional = true, default-features = false, features = ["logging", "std", "tls12"] }
-thiserror = "1.0.58"
-tokio = { version = "1.47.1", optional = true }
-
 kycom = { path = "../kycom", optional = true }
 kymux-types = { path = "../kymux-types" }
 kynet = { path = "../kynet", optional = true }
 kyproto = { path = "../kyproto", optional = true }
 
-[dev-dependencies]
-byteorder = "1.5.0"
-bytes = "1.5.0"
-env_logger = "0.11.3"
-rand = "0.8.5"
-rcgen = "0.13.1"
-sha1 = "0.10.6"
-
 [features]
 default = []
 ipc = [
     "dep:kycom",
-    "tokio/macros",
-    "tokio/rt",
-    "tokio/sync",
-]
-ipc-client = [
-    "dep:kycom",
-    "tokio/macros",
-    "tokio/rt",
-    "tokio/sync",
 ]
 backend-quinn = [
-    "dep:rustls",
     "kynet/kynet-quinn",
     "kyproto/kynet-quinn",
 ]
