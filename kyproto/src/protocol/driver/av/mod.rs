@@ -22,8 +22,7 @@ use crate::protocol::ProtocolError;
 
 use bytes::BytesMut;
 use kymux_types::av::*;
-use kynet::error::ReadExactError;
-use kynet::RecvStream;
+use tokio::io::{AsyncRead, AsyncReadExt};
 
 pub(crate) mod audio_unreliable;
 pub(crate) mod audio_unreliable_fec;
@@ -32,13 +31,17 @@ pub(crate) mod video_gopstream;
 pub(crate) mod video_unreliable;
 pub(crate) mod video_unreliable_fec;
 
-pub(crate) async fn read_packet(recv: &mut RecvStream) -> Result<Option<AVPacket>, ProtocolError> {
+pub(crate) async fn read_packet<R>(recv: &mut R) -> Result<Option<AVPacket>, ProtocolError>
+where
+    R: AsyncRead + Unpin,
+{
     let mut header = [0; AVPacketHeader::SERIALIZED_SIZE];
     let res = recv.read_exact(&mut header).await;
-    if let Err(ReadExactError::FinishedEarly(read)) = res {
-        if read == 0 {
-            return Ok(None);
-        }
+    if res
+        .as_ref()
+        .is_err_and(|e| e.kind() == std::io::ErrorKind::UnexpectedEof)
+    {
+        return Ok(None);
     }
     res.map_err(ProtocolError::new)?;
 

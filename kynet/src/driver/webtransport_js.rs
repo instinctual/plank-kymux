@@ -32,7 +32,7 @@ use std::task::{Context, Poll};
 use async_trait::async_trait;
 use bytes::{Buf, Bytes, BytesMut};
 use kymux_util::*;
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::{spawn_local, JsFuture};
 
@@ -352,18 +352,6 @@ impl WebTransportJSSendStreamDriver {
 
 #[async_trait(?Send)]
 impl SendStreamDriver for WebTransportJSSendStreamDriver {
-    async fn write(&mut self, buf: &[u8]) -> Result<usize, WriteError> {
-        AsyncWriteExt::write(self, buf)
-            .await
-            .map_err(|e| WriteError(format!("{e}")))
-    }
-
-    async fn write_all(&mut self, buf: &[u8]) -> Result<(), WriteError> {
-        AsyncWriteExt::write_all(self, buf)
-            .await
-            .map_err(|e| WriteError(format!("{e}")))
-    }
-
     async fn finish(&mut self) -> Result<(), ClosedStreamError> {
         let promise = self.writer.close();
         JsFuture::from(promise).await?;
@@ -517,16 +505,6 @@ impl WebTransportJSRecvStreamDriver {
 
 #[async_trait(?Send)]
 impl RecvStreamDriver for WebTransportJSRecvStreamDriver {
-    async fn read(&mut self, buf: &mut [u8]) -> Result<Option<usize>, ReadError> {
-        if buf.is_empty() {
-            return Ok(Some(0));
-        }
-        AsyncReadExt::read(self, buf)
-            .await
-            .map(|size| if size > 0 { Some(size) } else { None })
-            .map_err(|e| ReadError(format!("{e}")))
-    }
-
     fn stop(&mut self) {
         let promise = self.reader.cancel();
         spawn_local(async move {
@@ -641,24 +619,6 @@ impl From<JsValue> for ConnectionError {
     }
 }
 
-impl From<JsValue> for ReadError {
-    fn from(value: JsValue) -> Self {
-        Self(format!("{value:?}"))
-    }
-}
-
-impl From<JsValue> for ReadExactError {
-    fn from(value: JsValue) -> Self {
-        Self::ReadError(value.into())
-    }
-}
-
-impl From<JsValue> for WriteError {
-    fn from(value: JsValue) -> Self {
-        Self(format!("{value:?}"))
-    }
-}
-
 impl From<JsValue> for SendDatagramError {
     fn from(value: JsValue) -> Self {
         Self(format!("{value:?}"))
@@ -690,9 +650,6 @@ macro_rules! impl_from_jsvalue {
 
 impl_from_jsvalue!(ConnectionError);
 impl_from_jsvalue!(SendDatagramError);
-impl_from_jsvalue!(ReadError);
-impl_from_jsvalue!(ReadExactError);
-impl_from_jsvalue!(WriteError);
 impl_from_jsvalue!(ClosedStreamError);
 
 fn js_value_to_io_error(err: JsValue) -> std::io::Error {

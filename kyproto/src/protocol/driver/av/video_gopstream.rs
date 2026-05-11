@@ -92,10 +92,11 @@ use async_trait::async_trait;
 use byteorder::{BigEndian, ByteOrder, WriteBytesExt};
 use kymux_types::av::*;
 use kymux_util::*;
-use kynet::error::{ConnectionError, ReadExactError};
+use kynet::error::ConnectionError;
 use kynet::{RecvStream, SendStream};
 #[allow(unused)]
 use log::{debug, error, info, warn};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::mpsc;
 
 pub(crate) struct VideoGopStreamProtocolSendDriver {
@@ -154,9 +155,9 @@ impl ProtocolSendDriver for VideoGopStreamProtocolSendDriver {
                         // this helps the receiver to determine when there is a
                         // real new codec or config packet.
                         let mut buf = vec![];
-                        buf.write_u32::<BigEndian>(self.gop_id);
-                        buf.write_u32::<BigEndian>(self.codec_gen);
-                        buf.write_u32::<BigEndian>(self.config_gen);
+                        AsyncWriteExt::write_u32(&mut buf, self.gop_id);
+                        AsyncWriteExt::write_u32(&mut buf, self.codec_gen);
+                        AsyncWriteExt::write_u32(&mut buf, self.config_gen);
 
                         self.gop_id += 1;
 

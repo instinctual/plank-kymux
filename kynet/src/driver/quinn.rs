@@ -25,12 +25,15 @@ use crate::{
 };
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::pin::Pin;
 use std::sync::Arc;
+use std::task::{Context, Poll};
 use std::time::Duration;
 
 use async_trait::async_trait;
 use bytes::Bytes;
 use rustls_platform_verifier::ConfigVerifierExt;
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
 /// ALPN protocol identifier for Kymux protocol over standard QUIC.
 pub const KYMUX_ALPN: &[u8] = b"kymux";
@@ -269,16 +272,6 @@ impl QuinnSendStreamDriver {
 
 #[async_trait]
 impl SendStreamDriver for QuinnSendStreamDriver {
-    async fn write(&mut self, buf: &[u8]) -> Result<usize, WriteError> {
-        let size = self.send.write(buf).await?;
-        Ok(size)
-    }
-
-    async fn write_all(&mut self, buf: &[u8]) -> Result<(), WriteError> {
-        self.send.write_all(buf).await?;
-        Ok(())
-    }
-
     async fn finish(&mut self) -> Result<(), ClosedStreamError> {
         self.send.finish()?;
         self.send.stopped().await.map_err(|_| ClosedStreamError)?;
@@ -300,6 +293,36 @@ impl SendStreamDriver for QuinnSendStreamDriver {
     }
 }
 
+impl AsyncWrite for QuinnSendStreamDriver {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<std::io::Result<usize>> {
+        AsyncWrite::poll_write(Pin::new(&mut self.send), cx, buf)
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.send).poll_flush(cx)
+    }
+
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.send).poll_shutdown(cx)
+    }
+
+    fn poll_write_vectored(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        bufs: &[std::io::IoSlice<'_>],
+    ) -> Poll<std::io::Result<usize>> {
+        Pin::new(&mut self.send).poll_write_vectored(cx, bufs)
+    }
+
+    fn is_write_vectored(&self) -> bool {
+        Pin::new(&self.send).is_write_vectored()
+    }
+}
+
 #[derive(Debug)]
 struct QuinnRecvStreamDriver {
     recv: quinn::RecvStream,
@@ -313,11 +336,6 @@ impl QuinnRecvStreamDriver {
 
 #[async_trait]
 impl RecvStreamDriver for QuinnRecvStreamDriver {
-    async fn read(&mut self, buf: &mut [u8]) -> Result<Option<usize>, ReadError> {
-        let size = self.recv.read(buf).await?;
-        Ok(size)
-    }
-
     fn stop(&mut self) {
         // ignore error if the stream is already closed
         let _ = self.recv.stop(quinn::VarInt::from_u32(0));
@@ -333,6 +351,16 @@ impl RecvStreamDriver for QuinnRecvStreamDriver {
     }
 }
 
+impl AsyncRead for QuinnRecvStreamDriver {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.recv).poll_read(cx, buf)
+    }
+}
+
 impl From<quinn::ConnectionError> for ConnectionError {
     fn from(value: quinn::ConnectionError) -> Self {
         Self(value.to_string())
@@ -341,18 +369,6 @@ impl From<quinn::ConnectionError> for ConnectionError {
 
 impl From<quinn::ConnectError> for ConnectionError {
     fn from(value: quinn::ConnectError) -> Self {
-        Self(value.to_string())
-    }
-}
-
-impl From<quinn::ReadError> for ReadError {
-    fn from(value: quinn::ReadError) -> Self {
-        Self(value.to_string())
-    }
-}
-
-impl From<quinn::WriteError> for WriteError {
-    fn from(value: quinn::WriteError) -> Self {
         Self(value.to_string())
     }
 }

@@ -32,7 +32,10 @@ use crate::driver::webtransport_js::WebTransportJSConnectionDriver;
 use crate::driver::wtransport::WTransportConnectionDriver;
 
 use std::fmt::Debug;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 use std::time::Duration;
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
 #[cfg(all(feature = "kynet-quinn", not(target_family = "wasm")))]
 use std::net::SocketAddr;
@@ -209,18 +212,6 @@ impl SendStream {
         }
     }
 
-    pub async fn write(&mut self, buf: &[u8]) -> Result<usize, WriteError> {
-        self.driver.write(buf).await
-    }
-
-    pub async fn write_all(&mut self, buf: &[u8]) -> Result<(), WriteError> {
-        self.driver.write_all(buf).await
-    }
-
-    pub async fn flush(&mut self) -> Result<(), WriteError> {
-        self.driver.flush().await
-    }
-
     pub async fn finish(&mut self) -> Result<(), ClosedStreamError> {
         self.driver.finish().await
     }
@@ -231,6 +222,24 @@ impl SendStream {
 
     pub async fn closed(&mut self) -> Result<(), ConnectionError> {
         self.driver.closed().await
+    }
+}
+
+impl AsyncWrite for SendStream {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<std::io::Result<usize>> {
+        Pin::new(&mut self.driver).poll_write(cx, buf)
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.driver).poll_flush(cx)
+    }
+
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.driver).poll_shutdown(cx)
     }
 }
 
@@ -257,19 +266,21 @@ impl RecvStream {
         }
     }
 
-    pub async fn read(&mut self, buf: &mut [u8]) -> Result<Option<usize>, ReadError> {
-        self.driver.read(buf).await
-    }
-
-    pub async fn read_exact(&mut self, buf: &mut [u8]) -> Result<(), ReadExactError> {
-        self.driver.read_exact(buf).await
-    }
-
     pub fn stop(&mut self) {
         self.driver.stop();
     }
 
     pub async fn closed(&mut self) -> Result<(), ConnectionError> {
         self.driver.closed().await
+    }
+}
+
+impl AsyncRead for RecvStream {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.driver).poll_read(cx, buf)
     }
 }

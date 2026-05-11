@@ -22,6 +22,7 @@
 compile_error!("No feature selected, pass either --features=js or --features=tokio-rt");
 
 use std::sync::atomic::{AtomicU16, Ordering};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use control::{Control, ReadyNotifier};
 use router::{KyChannel, Router};
@@ -39,7 +40,7 @@ pub use protocol::clock_sync::{
 };
 pub use protocol::{AudioProtocol, VideoProtocol};
 
-pub use kynet::error::{ConnectionError, ReadExactError};
+pub use kynet::error::ConnectionError;
 pub use kynet::init_crypto;
 pub use kynet::ConnectionStats;
 

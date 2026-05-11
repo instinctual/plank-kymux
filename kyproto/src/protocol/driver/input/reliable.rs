@@ -24,8 +24,8 @@ use crate::router::{KyChannel, KyChannelRecv, KyChannelSend};
 use async_trait::async_trait;
 use bytes::BytesMut;
 use kymux_types::input::*;
-use kynet::error::ReadExactError;
 use kynet::{RecvStream, SendStream};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 pub(crate) struct ReliableProtocolSendDriver {
     ky_channel: KyChannelSend,

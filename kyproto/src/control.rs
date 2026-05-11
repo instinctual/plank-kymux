@@ -24,12 +24,12 @@ use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 
 use kymux_util::*;
-use kynet::error::*;
 use kynet::{RecvStream, SendStream};
 #[allow(unused)]
 use log::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::{mpsc, oneshot};
 
 #[derive(Debug, Error)]
@@ -223,16 +223,24 @@ impl Control {
     async fn recv_msg(rx: &mut RecvStream) -> Result<Option<ControlMsg>, ControlError> {
         let mut buf = [0u8; 4];
         let res = rx.read_exact(&mut buf).await;
-        if let Err(ReadExactError::FinishedEarly(read)) = res {
-            if read == 0 {
-                return Ok(None);
-            }
+        if res
+            .as_ref()
+            .is_err_and(|e| e.kind() == std::io::ErrorKind::UnexpectedEof)
+        {
+            return Ok(None);
         }
         res?;
 
         let len = u32::from_be_bytes(buf);
         let mut buf = vec![0u8; len as usize];
-        rx.read_exact(&mut buf).await?;
+        let res = rx.read_exact(&mut buf).await;
+        if res
+            .as_ref()
+            .is_err_and(|e| e.kind() == std::io::ErrorKind::UnexpectedEof)
+        {
+            return Ok(None);
+        }
+        res?;
 
         let msg = rmp_serde::from_slice(&buf)
             .map_err(|e| ControlError(format!("Cannot decode serde message: {e}")))?;
@@ -319,8 +327,7 @@ macro_rules! impl_control_error_from {
         }
     };
 }
-impl_control_error_from!(ReadExactError);
-impl_control_error_from!(WriteError);
+impl_control_error_from!(std::io::Error);
 impl_control_error_from!(rmp_serde::decode::Error);
 impl_control_error_from!(rmp_serde::encode::Error);
 

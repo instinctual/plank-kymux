@@ -71,26 +71,7 @@ pub trait ConnectionDriver: Debug + KySend + KySync {
 
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
-pub trait SendStreamDriver: Debug + KySend + KySync {
-    async fn write(&mut self, buf: &[u8]) -> Result<usize, WriteError>;
-
-    async fn write_all(&mut self, buf: &[u8]) -> Result<(), WriteError> {
-        let mut offset = 0;
-        while offset < buf.len() {
-            let w = self.write(&buf[offset..]).await?;
-            assert!(w <= buf.len() - offset);
-            offset += w;
-            if offset == buf.len() {
-                break;
-            }
-        }
-        Ok(())
-    }
-
-    async fn flush(&mut self) -> Result<(), WriteError> {
-        Ok(())
-    }
-
+pub trait SendStreamDriver: Debug + tokio::io::AsyncWrite + Unpin + KySend + KySync {
     async fn finish(&mut self) -> Result<(), ClosedStreamError>;
 
     fn reset(&mut self);
@@ -100,27 +81,7 @@ pub trait SendStreamDriver: Debug + KySend + KySync {
 
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
-pub trait RecvStreamDriver: Debug + KySend + KySync {
-    async fn read(&mut self, buf: &mut [u8]) -> Result<Option<usize>, ReadError>;
-
-    async fn read_exact(&mut self, buf: &mut [u8]) -> Result<(), ReadExactError> {
-        let mut offset = 0;
-        while let Some(r) = self.read(&mut buf[offset..]).await? {
-            assert!(r <= buf.len() - offset);
-            offset += r;
-            if offset == buf.len() {
-                break;
-            }
-        }
-
-        assert!(offset <= buf.len());
-        if offset < buf.len() {
-            Err(ReadExactError::FinishedEarly(offset))?;
-        }
-
-        Ok(())
-    }
-
+pub trait RecvStreamDriver: Debug + tokio::io::AsyncRead + Unpin + KySend + KySync {
     fn stop(&mut self);
 
     async fn closed(&mut self) -> Result<(), ConnectionError>;

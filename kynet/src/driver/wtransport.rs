@@ -24,11 +24,14 @@ use crate::{
     SendStreamDriver,
 };
 
+use std::pin::Pin;
+use std::task::{Context, Poll};
 use std::time::Duration;
 
 use async_trait::async_trait;
 use bytes::Bytes;
 use rustls_platform_verifier::ConfigVerifierExt;
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
 impl From<wtransport::Connection> for Connection {
     fn from(value: wtransport::Connection) -> Self {
@@ -166,16 +169,6 @@ impl WTransportSendStreamDriver {
 
 #[async_trait]
 impl SendStreamDriver for WTransportSendStreamDriver {
-    async fn write(&mut self, buf: &[u8]) -> Result<usize, WriteError> {
-        let size = self.send.write(buf).await?;
-        Ok(size)
-    }
-
-    async fn write_all(&mut self, buf: &[u8]) -> Result<(), WriteError> {
-        self.send.write_all(buf).await?;
-        Ok(())
-    }
-
     async fn finish(&mut self) -> Result<(), ClosedStreamError> {
         self.send.finish().await.map_err(|_| ClosedStreamError)
     }
@@ -197,6 +190,36 @@ impl SendStreamDriver for WTransportSendStreamDriver {
     }
 }
 
+impl AsyncWrite for WTransportSendStreamDriver {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<std::io::Result<usize>> {
+        AsyncWrite::poll_write(Pin::new(&mut self.send), cx, buf)
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.send).poll_flush(cx)
+    }
+
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.send).poll_shutdown(cx)
+    }
+
+    fn poll_write_vectored(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        bufs: &[std::io::IoSlice<'_>],
+    ) -> Poll<std::io::Result<usize>> {
+        Pin::new(&mut self.send).poll_write_vectored(cx, bufs)
+    }
+
+    fn is_write_vectored(&self) -> bool {
+        Pin::new(&self.send).is_write_vectored()
+    }
+}
+
 #[derive(Debug)]
 struct WTransportRecvStreamDriver {
     recv: wtransport::RecvStream,
@@ -210,11 +233,6 @@ impl WTransportRecvStreamDriver {
 
 #[async_trait]
 impl RecvStreamDriver for WTransportRecvStreamDriver {
-    async fn read(&mut self, buf: &mut [u8]) -> Result<Option<usize>, ReadError> {
-        let size = self.recv.read(buf).await?;
-        Ok(size)
-    }
-
     fn stop(&mut self) {
         // ignore error if the stream is already closed
         let _ = self.recv.quic_stream_mut().stop(quinn::VarInt::from_u32(0));
@@ -227,6 +245,16 @@ impl RecvStreamDriver for WTransportRecvStreamDriver {
             .await
             .map_err(|e| ConnectionError(format!("Stopped error: {e}")))?;
         Ok(())
+    }
+}
+
+impl AsyncRead for WTransportRecvStreamDriver {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.recv).poll_read(cx, buf)
     }
 }
 
@@ -244,18 +272,6 @@ impl From<wtransport::error::ConnectingError> for ConnectionError {
 
 impl From<wtransport::error::StreamOpeningError> for ConnectionError {
     fn from(value: wtransport::error::StreamOpeningError) -> Self {
-        Self(value.to_string())
-    }
-}
-
-impl From<wtransport::error::StreamReadError> for ReadError {
-    fn from(value: wtransport::error::StreamReadError) -> Self {
-        Self(value.to_string())
-    }
-}
-
-impl From<wtransport::error::StreamWriteError> for WriteError {
-    fn from(value: wtransport::error::StreamWriteError) -> Self {
         Self(value.to_string())
     }
 }

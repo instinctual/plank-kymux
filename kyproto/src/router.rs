@@ -34,6 +34,7 @@ use kynet::{Connection, ConnectionStats, RecvStream, SendStream};
 #[allow(unused)]
 use log::{debug, error, info, warn};
 use thiserror::Error;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::mpsc;
 
 type ClientMap = HashMap<u16, RouterClient>;
@@ -130,14 +131,17 @@ impl Router {
         ))
     }
 
-    async fn read_endpoint_id(recv: &mut RecvStream) -> Result<u16, ReadExactError> {
+    async fn read_endpoint_id(recv: &mut RecvStream) -> Result<u16, std::io::Error> {
         let mut endpoint_id_raw = [0u8; 2];
         recv.read_exact(&mut endpoint_id_raw).await?;
         let endpoint = u16::from_be_bytes(endpoint_id_raw);
         Ok(endpoint)
     }
 
-    async fn write_endpoint_id(send: &mut SendStream, endpoint_id: u16) -> Result<(), WriteError> {
+    async fn write_endpoint_id(
+        send: &mut SendStream,
+        endpoint_id: u16,
+    ) -> Result<(), std::io::Error> {
         send.write_all(&endpoint_id.to_be_bytes()).await?;
         send.flush().await
     }
