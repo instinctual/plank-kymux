@@ -233,7 +233,8 @@ impl Control {
         let mut buf = vec![0u8; len as usize];
         rx.read_exact(&mut buf).await?;
 
-        let msg = rmp_serde::from_slice(&buf)?;
+        let msg = rmp_serde::from_slice(&buf)
+            .map_err(|e| ControlError(format!("Cannot decode serde message: {e}")))?;
 
         Ok(Some(msg))
     }
