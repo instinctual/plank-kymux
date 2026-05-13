@@ -171,6 +171,7 @@ impl ProtocolSendDriver for VideoGopStreamProtocolSendDriver {
                             .write_all(&buf)
                             .await
                             .map_err(ProtocolError::new)?;
+                        new_stream.flush().await.map_err(ProtocolError::new)?;
 
                         if let Some(mut old_stream) = self.current_stream.replace(new_stream) {
                             if let Err(err) = old_stream.finish().await {
@@ -188,6 +189,7 @@ impl ProtocolSendDriver for VideoGopStreamProtocolSendDriver {
                             .write_all(&packet.payload)
                             .await
                             .map_err(ProtocolError::new)?;
+                        stream.flush().await.map_err(ProtocolError::new)?;
                     } else {
                         warn!(
                             "Unexpected missing current stream, a key packet has not been received"

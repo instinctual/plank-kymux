@@ -138,7 +138,8 @@ impl Router {
     }
 
     async fn write_endpoint_id(send: &mut SendStream, endpoint_id: u16) -> Result<(), WriteError> {
-        send.write_all(&endpoint_id.to_be_bytes()).await
+        send.write_all(&endpoint_id.to_be_bytes()).await?;
+        send.flush().await
     }
 
     async fn accept_channels_uni(

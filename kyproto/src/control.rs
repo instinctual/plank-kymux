@@ -201,6 +201,7 @@ impl Control {
 
         tx.write_all(&len.to_be_bytes()).await?;
         tx.write_all(&buf).await?;
+        tx.flush().await?;
         Ok(())
     }
 

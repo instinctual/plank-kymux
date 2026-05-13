@@ -56,6 +56,7 @@ impl ProtocolSendDriver for ReliableProtocolSendDriver {
             .write_all(&packet.payload)
             .await
             .map_err(ProtocolError::new)?;
+        self.send.flush().await.map_err(ProtocolError::new)?;
 
         Ok(())
     }

@@ -217,6 +217,10 @@ impl SendStream {
         self.driver.write_all(buf).await
     }
 
+    pub async fn flush(&mut self) -> Result<(), WriteError> {
+        self.driver.flush().await
+    }
+
     pub async fn finish(&mut self) -> Result<(), ClosedStreamError> {
         self.driver.finish().await
     }

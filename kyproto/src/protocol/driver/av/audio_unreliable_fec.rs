@@ -139,6 +139,7 @@ impl ProtocolSendDriver for AudioUnreliableFecProtocolSendDriver {
                     .write_all(&buf)
                     .await
                     .map_err(ProtocolError::new)?;
+                self.stream.flush().await.map_err(ProtocolError::new)?;
             }
             AVPacket::Media(packet) => {
                 if packet.header.is_config {
@@ -155,6 +156,7 @@ impl ProtocolSendDriver for AudioUnreliableFecProtocolSendDriver {
                         .write_all(&buf)
                         .await
                         .map_err(ProtocolError::new)?;
+                    self.stream.flush().await.map_err(ProtocolError::new)?;
                 } else {
                     self.send_datagrams(packet).await?;
                 }

@@ -95,6 +95,9 @@ impl UnauthenticatedConnection {
         tx.write(&[0])
             .await
             .map_err(|_| ConnectionError("Dummy byte write failed".to_string()))?;
+        tx.flush()
+            .await
+            .map_err(|_| ConnectionError("Dummy byte flush failed".to_string()))?;
 
         let control = Control::start(tx, rx);
         let router = Router::start(conn.clone());

@@ -58,6 +58,7 @@ impl ProtocolSendDriver for ReliableProtocolSendDriver {
                     .write_all(&header)
                     .await
                     .map_err(ProtocolError::new)?;
+                self.send.flush().await.map_err(ProtocolError::new)?;
             }
             AVPacket::Media(packet) => {
                 let header = packet.header.serialize();
@@ -69,6 +70,7 @@ impl ProtocolSendDriver for ReliableProtocolSendDriver {
                     .write_all(&packet.payload)
                     .await
                     .map_err(ProtocolError::new)?;
+                self.send.flush().await.map_err(ProtocolError::new)?;
             }
             AVPacket::Hole(_) => panic!("Unexpected input hole packet"),
         }

@@ -371,6 +371,9 @@ impl Connection {
         tx.write(&[0])
             .await
             .map_err(|_| ConnectionError("Dummy byte write failed".to_string()))?;
+        tx.flush()
+            .await
+            .map_err(|_| ConnectionError("Dummy byte flush failed".to_string()))?;
 
         let control = Control::start(tx, rx);
         let router = Router::start(conn.clone());
@@ -395,6 +398,9 @@ impl Connection {
         tx.write_all(&buf)
             .await
             .map_err(|_| ConnectionError("Could not write ClientAuth".to_string()))?;
+        tx.flush()
+            .await
+            .map_err(|_| ConnectionError("Could not flush ClientAuth".to_string()))?;
 
         // The server writes 1 byte to confirm authentication, or closes the connection on failure
         rx.read(&mut [0])

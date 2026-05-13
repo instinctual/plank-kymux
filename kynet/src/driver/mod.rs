@@ -87,6 +87,10 @@ pub trait SendStreamDriver: Debug + KySend + KySync {
         Ok(())
     }
 
+    async fn flush(&mut self) -> Result<(), WriteError> {
+        Ok(())
+    }
+
     async fn finish(&mut self) -> Result<(), ClosedStreamError>;
 
     fn reset(&mut self);
