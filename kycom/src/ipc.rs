@@ -21,7 +21,7 @@
 use crate::serial::{Deserializer, Serializer};
 use async_trait::async_trait;
 use kymux_types::*;
-use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 
 struct IpcSend<T> {
     writer: Box<dyn AsyncWrite + Send + Unpin>,
@@ -48,7 +48,8 @@ impl<T: Send + 'static> ProtocolSendDriver for IpcSend<T> {
         self.serializer
             .write(packet, &mut self.writer)
             .await
-            .map_err(ProtocolError::new)
+            .map_err(ProtocolError::new)?;
+        self.writer.flush().await.map_err(ProtocolError::new)
     }
 }
 

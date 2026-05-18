@@ -75,9 +75,11 @@ impl Channel {
         assert!(connection.addr.endpoint_id == endpoint_id);
         if self.role == ChannelRole::Client {
             connection.write_u16(endpoint_id).await?;
+            connection.flush().await?;
             connection.read_u8().await?;
         } else {
             connection.write_all(&[0]).await?;
+            connection.flush().await?;
         }
 
         Ok(connection)
