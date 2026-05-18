@@ -65,6 +65,19 @@ impl AsyncWrite for Connection {
         let this = self.get_mut();
         Pin::new(&mut this.write).poll_shutdown(cx)
     }
+
+    fn poll_write_vectored(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        bufs: &[std::io::IoSlice<'_>],
+    ) -> Poll<std::io::Result<usize>> {
+        let this = self.get_mut();
+        Pin::new(&mut this.write).poll_write_vectored(cx, bufs)
+    }
+
+    fn is_write_vectored(&self) -> bool {
+        Pin::new(&self.write).is_write_vectored()
+    }
 }
 
 impl AsyncRead for Connection {
