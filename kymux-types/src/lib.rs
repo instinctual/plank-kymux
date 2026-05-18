@@ -21,6 +21,7 @@
 pub mod av;
 pub mod data;
 pub mod input;
+pub mod ipc;
 pub mod metrics;
 pub mod runtime;
 pub mod serial;

@@ -19,11 +19,11 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use crate::connection::Connection;
-use crate::{ipc, KyComAddr};
+use crate::KyComAddr;
 
 use async_trait::async_trait;
 use kymux_types as types;
-use kymux_types::ProtocolError;
+use kymux_types::{ipc, ProtocolError};
 #[allow(unused)]
 use log::{debug, error, info, warn};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};

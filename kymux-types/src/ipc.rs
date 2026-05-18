@@ -19,19 +19,29 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use crate::serial::{Deserializer, Serializer};
+use crate::{ProtocolError, ProtocolRecv, ProtocolRecvDriver, ProtocolSend, ProtocolSendDriver};
+
+use kymux_util::*;
+
 use async_trait::async_trait;
-use kymux_types::*;
-use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
+use tokio::io::AsyncWriteExt;
+
+// These traits are required because KySend is not an auto-trait.
+pub trait KySerializer: Serializer + KySend {}
+impl<T: Serializer + KySend> KySerializer for T {}
+
+pub trait KyDeserializer: Deserializer + KySend {}
+impl<T: Deserializer + KySend> KyDeserializer for T {}
 
 struct IpcSend<T> {
-    writer: Box<dyn AsyncWrite + Send + Unpin>,
-    serializer: Box<dyn Serializer<Packet = T> + Send>,
+    writer: Box<dyn KyAsyncWrite + Unpin>,
+    serializer: Box<dyn KySerializer<Packet = T>>,
 }
 
 impl<T> IpcSend<T> {
     pub(crate) fn new(
-        writer: impl AsyncWrite + Send + Unpin + 'static,
-        serializer: impl Serializer<Packet = T> + Send + 'static,
+        writer: impl KyAsyncWrite + Unpin + 'static,
+        serializer: impl KySerializer<Packet = T> + 'static,
     ) -> Self {
         Self {
             writer: Box::new(writer),
@@ -40,8 +50,9 @@ impl<T> IpcSend<T> {
     }
 }
 
-#[async_trait]
-impl<T: Send + 'static> ProtocolSendDriver for IpcSend<T> {
+#[cfg_attr(target_family = "wasm", async_trait(?Send))]
+#[cfg_attr(not(target_family = "wasm"), async_trait)]
+impl<T: KySend + 'static> ProtocolSendDriver for IpcSend<T> {
     type Packet = T;
 
     async fn send(&mut self, packet: T) -> Result<(), ProtocolError> {
@@ -54,14 +65,14 @@ impl<T: Send + 'static> ProtocolSendDriver for IpcSend<T> {
 }
 
 struct IpcRecv<T> {
-    reader: Box<dyn AsyncRead + Send + Unpin>,
-    deserializer: Box<dyn Deserializer<Packet = T> + Send>,
+    reader: Box<dyn KyAsyncRead + Unpin>,
+    deserializer: Box<dyn KyDeserializer<Packet = T>>,
 }
 
 impl<T> IpcRecv<T> {
     pub(crate) fn new(
-        reader: impl AsyncRead + Send + Unpin + 'static,
-        deserializer: impl Deserializer<Packet = T> + Send + 'static,
+        reader: impl KyAsyncRead + Unpin + 'static,
+        deserializer: impl KyDeserializer<Packet = T> + 'static,
     ) -> Self {
         Self {
             reader: Box::new(reader),
@@ -70,8 +81,9 @@ impl<T> IpcRecv<T> {
     }
 }
 
-#[async_trait]
-impl<T: Send + 'static> ProtocolRecvDriver for IpcRecv<T> {
+#[cfg_attr(target_family = "wasm", async_trait(?Send))]
+#[cfg_attr(not(target_family = "wasm"), async_trait)]
+impl<T: KySend + 'static> ProtocolRecvDriver for IpcRecv<T> {
     type Packet = T;
 
     async fn recv(&mut self) -> Result<Option<T>, ProtocolError> {
@@ -83,36 +95,36 @@ impl<T: Send + 'static> ProtocolRecvDriver for IpcRecv<T> {
 }
 
 pub fn create_send_protocol<T>(
-    writer: impl AsyncWrite + Send + Unpin + 'static,
-    serializer: impl Serializer<Packet = T> + Send + 'static,
+    writer: impl KyAsyncWrite + Unpin + 'static,
+    serializer: impl KySerializer<Packet = T> + 'static,
 ) -> ProtocolSend<T>
 where
-    T: Send + 'static,
+    T: KySend + 'static,
 {
     let driver = IpcSend::new(writer, serializer);
     ProtocolSend::new(driver)
 }
 
 pub fn create_recv_protocol<T>(
-    reader: impl AsyncRead + Send + Unpin + 'static,
-    deserializer: impl Deserializer<Packet = T> + Send + 'static,
+    reader: impl KyAsyncRead + Unpin + 'static,
+    deserializer: impl KyDeserializer<Packet = T> + 'static,
 ) -> ProtocolRecv<T>
 where
-    T: Send + 'static,
+    T: KySend + 'static,
 {
     let driver = IpcRecv::new(reader, deserializer);
     ProtocolRecv::new(driver)
 }
 
 pub fn create_bi_protocol<TX, RX>(
-    reader: impl AsyncRead + Send + Unpin + 'static,
-    writer: impl AsyncWrite + Send + Unpin + 'static,
-    serializer: impl Serializer<Packet = TX> + Send + 'static,
-    deserializer: impl Deserializer<Packet = RX> + Send + 'static,
+    reader: impl KyAsyncRead + Unpin + 'static,
+    writer: impl KyAsyncWrite + Unpin + 'static,
+    serializer: impl KySerializer<Packet = TX> + 'static,
+    deserializer: impl KyDeserializer<Packet = RX> + 'static,
 ) -> (ProtocolSend<TX>, ProtocolRecv<RX>)
 where
-    TX: Send + 'static,
-    RX: Send + 'static,
+    TX: KySend + 'static,
+    RX: KySend + 'static,
 {
     let send = create_send_protocol(writer, serializer);
     let recv = create_recv_protocol(reader, deserializer);
