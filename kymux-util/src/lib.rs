@@ -22,6 +22,7 @@
 
 use std::ops::{Deref, DerefMut};
 use thiserror::Error;
+use tokio::io::{AsyncRead, AsyncWrite};
 
 #[cfg(not(target_family = "wasm"))]
 pub type KyArc<T> = std::sync::Arc<T>;
@@ -104,6 +105,19 @@ impl<T> KySend for T {}
 
 #[cfg(target_family = "wasm")]
 impl<T> KySync for T {}
+
+// KyAsyncRead is AsyncRead + Send on non-wasm platforms
+// KyAsyncWrite is AsyncWrite + Send on non-wasm platforms
+//
+// These traits are required because KySend is not an auto-trait.
+
+pub trait KyAsyncRead: AsyncRead + KySend {}
+
+impl<T: AsyncRead + KySend> KyAsyncRead for T {}
+
+pub trait KyAsyncWrite: AsyncWrite + KySend {}
+
+impl<T: AsyncWrite + KySend> KyAsyncWrite for T {}
 
 #[derive(Debug, Error, Clone, Eq, PartialEq)]
 #[error("decode hex error")]

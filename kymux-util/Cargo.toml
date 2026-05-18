@@ -5,3 +5,4 @@ edition = "2021"
 
 [dependencies]
 thiserror = "1.0.58"
+tokio = { version = "1.47.1", features = ["io-util"] }
