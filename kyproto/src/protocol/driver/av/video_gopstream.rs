@@ -81,7 +81,7 @@
 //! Every time a new QUIC stream is opened by the server, the previous one is
 //! reset, so no more retransmissions will occur for the old GOPs.
 
-use crate::protocol::driver::av;
+use crate::protocol::driver::{self, av};
 use crate::protocol::{ProtocolError, ProtocolRecvDriver, ProtocolSendDriver};
 use crate::router::KyChannel;
 use crate::runtime;
@@ -298,7 +298,7 @@ impl VideoGopStreamProtocolRecvDriver {
         tx: mpsc::Sender<RecvMsg>,
         gop_id: u32,
     ) -> Result<(), ProtocolError> {
-        while let Some(packet) = av::read_packet(&mut recv).await? {
+        while let Some(packet) = driver::read_packet(&mut recv, &mut AVPacketDeserializer).await? {
             tx.send(RecvMsg::NewPacket { packet, gop_id })
                 .await
                 .map_err(ProtocolError::new)

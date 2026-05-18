@@ -18,7 +18,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use crate::protocol::driver::av;
+use crate::protocol::driver::{self, av};
 use crate::protocol::{ProtocolError, ProtocolRecvDriver, ProtocolSendDriver};
 use crate::router::KyChannel;
 use crate::ProtocolStats;
@@ -51,31 +51,7 @@ impl ProtocolSendDriver for ReliableProtocolSendDriver {
     type Packet = AVPacket;
 
     async fn send(&mut self, packet: AVPacket) -> Result<(), ProtocolError> {
-        match packet {
-            AVPacket::Codec(packet) => {
-                let header = packet.header.serialize();
-                self.send
-                    .write_all(&header)
-                    .await
-                    .map_err(ProtocolError::new)?;
-                self.send.flush().await.map_err(ProtocolError::new)?;
-            }
-            AVPacket::Media(packet) => {
-                let header = packet.header.serialize();
-                self.send
-                    .write_all(&header)
-                    .await
-                    .map_err(ProtocolError::new)?;
-                self.send
-                    .write_all(&packet.payload)
-                    .await
-                    .map_err(ProtocolError::new)?;
-                self.send.flush().await.map_err(ProtocolError::new)?;
-            }
-            AVPacket::Hole(_) => panic!("Unexpected input hole packet"),
-        }
-
-        Ok(())
+        driver::write_packet(&mut self.send, &mut AVPacketSerializer, packet).await
     }
 }
 
@@ -100,6 +76,6 @@ impl ProtocolRecvDriver for ReliableProtocolRecvDriver {
     type Packet = AVPacket;
 
     async fn recv(&mut self) -> Result<Option<AVPacket>, ProtocolError> {
-        av::read_packet(&mut self.recv).await
+        driver::read_packet(&mut self.recv, &mut AVPacketDeserializer).await
     }
 }

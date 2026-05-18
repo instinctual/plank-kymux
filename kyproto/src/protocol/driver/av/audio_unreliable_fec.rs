@@ -18,8 +18,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use crate::protocol::driver::av;
 use crate::protocol::driver::util::seq::Sequencer;
+use crate::protocol::driver::{self, av};
 use crate::protocol::{ProtocolError, ProtocolRecvDriver, ProtocolSendDriver};
 use crate::router::KyChannel;
 use crate::runtime::{self, Instant};
@@ -261,7 +261,7 @@ impl AudioUnreliableFecProtocolRecvDriver {
                 .map_err(ProtocolError::new)?;
             let raw_kypacket_seq = BigEndian::read_u32(&seqs);
 
-            let packet = av::read_packet(&mut stream)
+            let packet = driver::read_packet(&mut stream, &mut AVPacketDeserializer)
                 .await?
                 .ok_or_else(|| ProtocolError("Missing packet data on stream".to_string()))?;
 

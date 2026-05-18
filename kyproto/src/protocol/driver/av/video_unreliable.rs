@@ -242,8 +242,8 @@
 //! packets only after the GOP keyframe is sent. It will depend if we use an
 //! intra-refresh strategy or if we send keyframes often.
 
-use crate::protocol::driver::av;
 use crate::protocol::driver::util::seq::Sequencer;
+use crate::protocol::driver::{self, av};
 use crate::protocol::{ProtocolError, ProtocolRecvDriver, ProtocolSendDriver};
 use crate::router::KyChannel;
 use crate::runtime::{self, Instant};
@@ -493,7 +493,7 @@ impl VideoUnreliableProtocolRecvDriver {
             let raw_kypacket_seq = BigEndian::read_u32(&seqs[..4]);
             let raw_group_seq = BigEndian::read_u32(&seqs[4..]);
 
-            let packet = av::read_packet(&mut stream)
+            let packet = driver::read_packet(&mut stream, &mut AVPacketDeserializer)
                 .await?
                 .ok_or_else(|| ProtocolError("Missing packet data on stream".to_string()))?;
 

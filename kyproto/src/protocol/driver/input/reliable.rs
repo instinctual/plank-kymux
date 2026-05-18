@@ -18,6 +18,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+use crate::protocol::driver;
 use crate::protocol::{ProtocolError, ProtocolRecvDriver, ProtocolSendDriver};
 use crate::router::{KyChannel, KyChannelRecv, KyChannelSend};
 
@@ -45,25 +46,7 @@ impl ProtocolSendDriver for ReliableProtocolSendDriver {
     type Packet = InputPacket;
 
     async fn send(&mut self, packet: InputPacket) -> Result<(), ProtocolError> {
-        let size =
-            u16::try_from(packet.payload.len()).expect("Input packet size must fit in 16 bits");
-
-        let type_ = [packet.type_];
-        self.send
-            .write_all(&type_)
-            .await
-            .map_err(ProtocolError::new)?;
-        self.send
-            .write_all(&size.to_be_bytes())
-            .await
-            .map_err(ProtocolError::new)?;
-        self.send
-            .write_all(&packet.payload)
-            .await
-            .map_err(ProtocolError::new)?;
-        self.send.flush().await.map_err(ProtocolError::new)?;
-
-        Ok(())
+        driver::write_packet(&mut self.send, &mut InputPacketSerializer, packet).await
     }
 }
 
@@ -85,29 +68,6 @@ impl ProtocolRecvDriver for ReliableProtocolRecvDriver {
     type Packet = InputPacket;
 
     async fn recv(&mut self) -> Result<Option<InputPacket>, ProtocolError> {
-        let mut type_ = [0u8; 1];
-        self.recv
-            .read_exact(&mut type_)
-            .await
-            .map_err(ProtocolError::new)?;
-        let type_ = type_[0];
-
-        let mut buf = [0; 2];
-        self.recv
-            .read_exact(&mut buf)
-            .await
-            .map_err(ProtocolError::new)?;
-        let size = u16::from_be_bytes(buf);
-
-        let mut buf = BytesMut::zeroed(size as usize);
-        self.recv
-            .read_exact(&mut buf)
-            .await
-            .map_err(ProtocolError::new)?;
-        let payload = buf.freeze();
-
-        let packet = InputPacket { type_, payload };
-
-        Ok(Some(packet))
+        driver::read_packet(&mut self.recv, &mut InputPacketDeserializer).await
     }
 }
