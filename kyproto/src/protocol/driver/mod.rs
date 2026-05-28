@@ -26,34 +26,24 @@ pub(crate) mod util;
 
 use crate::protocol::ProtocolError;
 
-pub(crate) use kymux_types::{Deserializer, ProtocolRecvDriver, ProtocolSendDriver, Serializer};
+pub(crate) use kymux_types::{ProtocolRecvDriver, ProtocolSendDriver, Serializable};
 use kymux_util::{KyAsyncRead, KyAsyncWrite};
 
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
 
-pub(crate) async fn read_packet<R, D>(
-    reader: &mut R,
-    deserializer: &mut D,
-) -> Result<Option<D::Packet>, ProtocolError>
+pub(crate) async fn read_packet<R, T>(reader: &mut R) -> Result<Option<T>, ProtocolError>
 where
     R: KyAsyncRead + Unpin,
-    D: Deserializer + Unpin,
+    T: Serializable,
 {
-    deserializer.read(reader).await.map_err(ProtocolError::new)
+    T::read(reader).await.map_err(ProtocolError::new)
 }
 
-pub(crate) async fn write_packet<W, S>(
-    writer: &mut W,
-    serializer: &mut S,
-    packet: S::Packet,
-) -> Result<(), ProtocolError>
+pub(crate) async fn write_packet<W, T>(writer: &mut W, packet: T) -> Result<(), ProtocolError>
 where
     W: KyAsyncWrite + Unpin,
-    S: Serializer + Unpin,
+    T: Serializable,
 {
-    serializer
-        .write(packet, writer)
-        .await
-        .map_err(ProtocolError::new)?;
+    T::write(packet, writer).await.map_err(ProtocolError::new)?;
     writer.flush().await.map_err(ProtocolError::new)
 }

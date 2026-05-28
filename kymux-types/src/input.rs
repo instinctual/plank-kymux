@@ -18,11 +18,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use crate::serial::{Deserializer, Serializer};
-
 use kymux_util::{KyAsyncRead, KyAsyncWrite};
 
-use async_trait::async_trait;
 use bytes::{Bytes, BytesMut};
 use std::io::{ErrorKind, Result};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -33,40 +30,20 @@ pub struct InputPacket {
     pub payload: Bytes,
 }
 
-pub struct InputPacketSerializer;
-pub struct InputPacketDeserializer;
-
-#[cfg_attr(target_family = "wasm", async_trait(?Send))]
-#[cfg_attr(not(target_family = "wasm"), async_trait)]
-impl Serializer for InputPacketSerializer {
-    type Packet = InputPacket;
-
-    async fn write(
-        &mut self,
-        packet: Self::Packet,
-        writer: &mut (dyn KyAsyncWrite + Unpin),
-    ) -> Result<()> {
+impl super::Serializable for InputPacket {
+    async fn write(self, writer: &mut (dyn KyAsyncWrite + Unpin)) -> Result<()> {
         let size =
-            u16::try_from(packet.payload.len()).expect("Input packet size must fit in 16 bits");
+            u16::try_from(self.payload.len()).expect("Input packet size must fit in 16 bits");
 
-        let type_ = [packet.type_];
+        let type_ = [self.type_];
         writer.write_all(&type_).await?;
         writer.write_all(&size.to_be_bytes()).await?;
-        writer.write_all(&packet.payload).await?;
+        writer.write_all(&self.payload).await?;
 
         Ok(())
     }
-}
 
-#[cfg_attr(target_family = "wasm", async_trait(?Send))]
-#[cfg_attr(not(target_family = "wasm"), async_trait)]
-impl Deserializer for InputPacketDeserializer {
-    type Packet = InputPacket;
-
-    async fn read(
-        &mut self,
-        reader: &mut (dyn KyAsyncRead + Unpin),
-    ) -> Result<Option<Self::Packet>> {
+    async fn read(reader: &mut (dyn KyAsyncRead + Unpin)) -> Result<Option<Self>> {
         let type_ = reader.read_u8().await?;
 
         let mut buf = [0; 2];

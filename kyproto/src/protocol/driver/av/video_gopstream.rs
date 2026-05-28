@@ -298,7 +298,7 @@ impl VideoGopStreamProtocolRecvDriver {
         tx: mpsc::Sender<RecvMsg>,
         gop_id: u32,
     ) -> Result<(), ProtocolError> {
-        while let Some(packet) = driver::read_packet(&mut recv, &mut AVPacketDeserializer).await? {
+        while let Some(packet) = driver::read_packet(&mut recv).await? {
             tx.send(RecvMsg::NewPacket { packet, gop_id })
                 .await
                 .map_err(ProtocolError::new)

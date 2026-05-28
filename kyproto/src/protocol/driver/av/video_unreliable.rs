@@ -493,7 +493,7 @@ impl VideoUnreliableProtocolRecvDriver {
             let raw_kypacket_seq = BigEndian::read_u32(&seqs[..4]);
             let raw_group_seq = BigEndian::read_u32(&seqs[4..]);
 
-            let packet = driver::read_packet(&mut stream, &mut AVPacketDeserializer)
+            let packet = driver::read_packet(&mut stream)
                 .await?
                 .ok_or_else(|| ProtocolError("Missing packet data on stream".to_string()))?;
 

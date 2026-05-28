@@ -132,7 +132,7 @@ impl types::ProtocolEndpointDriver for VideoClientEndpointDriver {
 
     async fn ready_boxed(mut self: Box<Self>) -> Result<Self::Protocol, ProtocolError> {
         let connection = self.channel.ready().await?;
-        let recv = ipc::create_recv_protocol(connection, types::av::AVPacketDeserializer);
+        let recv = ipc::create_recv_protocol(connection);
         Ok(Self::Protocol { recv })
     }
 }
@@ -147,7 +147,7 @@ impl types::ProtocolEndpointDriver for VideoServerEndpointDriver {
 
     async fn ready_boxed(mut self: Box<Self>) -> Result<Self::Protocol, ProtocolError> {
         let connection = self.channel.ready().await?;
-        let send = ipc::create_send_protocol(connection, types::av::AVPacketSerializer);
+        let send = ipc::create_send_protocol(connection);
         Ok(Self::Protocol { send })
     }
 }
@@ -162,7 +162,7 @@ impl types::ProtocolEndpointDriver for AudioClientEndpointDriver {
 
     async fn ready_boxed(mut self: Box<Self>) -> Result<Self::Protocol, ProtocolError> {
         let connection = self.channel.ready().await?;
-        let recv = ipc::create_recv_protocol(connection, types::av::AVPacketDeserializer);
+        let recv = ipc::create_recv_protocol(connection);
         Ok(Self::Protocol { recv })
     }
 }
@@ -177,7 +177,7 @@ impl types::ProtocolEndpointDriver for AudioServerEndpointDriver {
 
     async fn ready_boxed(mut self: Box<Self>) -> Result<Self::Protocol, ProtocolError> {
         let connection = self.channel.ready().await?;
-        let send = ipc::create_send_protocol(connection, types::av::AVPacketSerializer);
+        let send = ipc::create_send_protocol(connection);
         Ok(Self::Protocol { send })
     }
 }
@@ -192,12 +192,7 @@ impl types::ProtocolEndpointDriver for DataEndpointDriver {
 
     async fn ready_boxed(mut self: Box<Self>) -> Result<Self::Protocol, ProtocolError> {
         let connection = self.channel.ready().await?;
-        let (send, recv) = ipc::create_bi_protocol(
-            connection.read,
-            connection.write,
-            types::data::DataPacketSerializer,
-            types::data::DataPacketDeserializer,
-        );
+        let (send, recv) = ipc::create_bi_protocol(connection.read, connection.write);
         Ok(Self::Protocol { send, recv })
     }
 }
@@ -212,12 +207,7 @@ impl types::ProtocolEndpointDriver for InputEndpointDriver {
 
     async fn ready_boxed(mut self: Box<Self>) -> Result<Self::Protocol, ProtocolError> {
         let connection = self.channel.ready().await?;
-        let (send, recv) = ipc::create_bi_protocol(
-            connection.read,
-            connection.write,
-            types::input::InputPacketSerializer,
-            types::input::InputPacketDeserializer,
-        );
+        let (send, recv) = ipc::create_bi_protocol(connection.read, connection.write);
         Ok(Self::Protocol { send, recv })
     }
 }
@@ -232,7 +222,7 @@ impl types::ProtocolEndpointDriver for MetricsClientEndpointDriver {
 
     async fn ready_boxed(mut self: Box<Self>) -> Result<Self::Protocol, ProtocolError> {
         let connection = self.channel.ready().await?;
-        let recv = ipc::create_recv_protocol(connection, types::metrics::MetricsPacketDeserializer);
+        let recv = ipc::create_recv_protocol(connection);
         Ok(Self::Protocol { recv })
     }
 }
@@ -247,7 +237,7 @@ impl types::ProtocolEndpointDriver for MetricsServerEndpointDriver {
 
     async fn ready_boxed(mut self: Box<Self>) -> Result<Self::Protocol, ProtocolError> {
         let connection = self.channel.ready().await?;
-        let send = ipc::create_send_protocol(connection, types::metrics::MetricsPacketSerializer);
+        let send = ipc::create_send_protocol(connection);
         Ok(Self::Protocol { send })
     }
 }

@@ -51,7 +51,7 @@ impl ProtocolSendDriver for ReliableProtocolSendDriver {
     type Packet = AVPacket;
 
     async fn send(&mut self, packet: AVPacket) -> Result<(), ProtocolError> {
-        driver::write_packet(&mut self.send, &mut AVPacketSerializer, packet).await
+        driver::write_packet(&mut self.send, packet).await
     }
 }
 
@@ -76,6 +76,6 @@ impl ProtocolRecvDriver for ReliableProtocolRecvDriver {
     type Packet = AVPacket;
 
     async fn recv(&mut self) -> Result<Option<AVPacket>, ProtocolError> {
-        driver::read_packet(&mut self.recv, &mut AVPacketDeserializer).await
+        driver::read_packet(&mut self.recv).await
     }
 }

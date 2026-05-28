@@ -18,28 +18,16 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use kymux_util::{KyAsyncRead, KyAsyncWrite};
+use kymux_util::{KyAsyncRead, KyAsyncWrite, KySend};
+use std::{future::Future, io};
 
-use async_trait::async_trait;
-use std::io::Result;
-
-#[cfg_attr(target_family = "wasm", async_trait(?Send))]
-#[cfg_attr(not(target_family = "wasm"), async_trait)]
-pub trait Serializer {
-    type Packet;
-    async fn write(
-        &mut self,
-        packet: Self::Packet,
+pub trait Serializable: Sized {
+    fn write(
+        self,
         writer: &mut (dyn KyAsyncWrite + Unpin),
-    ) -> Result<()>;
-}
+    ) -> impl Future<Output = io::Result<()>> + KySend;
 
-#[cfg_attr(target_family = "wasm", async_trait(?Send))]
-#[cfg_attr(not(target_family = "wasm"), async_trait)]
-pub trait Deserializer {
-    type Packet;
-    async fn read(
-        &mut self,
+    fn read(
         reader: &mut (dyn KyAsyncRead + Unpin),
-    ) -> Result<Option<Self::Packet>>;
+    ) -> impl Future<Output = io::Result<Option<Self>>> + KySend;
 }

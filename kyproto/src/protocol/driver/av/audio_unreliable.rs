@@ -258,7 +258,7 @@ impl AudioUnreliableProtocolRecvDriver {
                 .map_err(ProtocolError::new)?;
             let raw_kypacket_seq = BigEndian::read_u32(&seqs);
 
-            let packet = driver::read_packet(&mut stream, &mut AVPacketDeserializer)
+            let packet = driver::read_packet(&mut stream)
                 .await?
                 .ok_or_else(|| ProtocolError("Missing packet data on stream".to_string()))?;
 

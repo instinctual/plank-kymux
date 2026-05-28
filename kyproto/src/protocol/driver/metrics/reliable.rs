@@ -46,7 +46,7 @@ impl ProtocolSendDriver for ReliableProtocolSendDriver {
     type Packet = MetricsPacket;
 
     async fn send(&mut self, packet: MetricsPacket) -> Result<(), ProtocolError> {
-        driver::write_packet(&mut self.send, &mut MetricsPacketSerializer, packet).await
+        driver::write_packet(&mut self.send, packet).await
     }
 }
 
@@ -68,6 +68,6 @@ impl ProtocolRecvDriver for ReliableProtocolRecvDriver {
     type Packet = MetricsPacket;
 
     async fn recv(&mut self) -> Result<Option<MetricsPacket>, ProtocolError> {
-        driver::read_packet(&mut self.recv, &mut MetricsPacketDeserializer).await
+        driver::read_packet(&mut self.recv).await
     }
 }
