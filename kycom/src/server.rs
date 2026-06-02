@@ -34,7 +34,11 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use tokio::sync::oneshot;
 
-type EndpointMap = HashMap<u16, oneshot::Sender<std::io::Result<Connection>>>;
+#[derive(Default)]
+struct EndpointMap {
+    next_id: u16,
+    map: HashMap<u16, oneshot::Sender<std::io::Result<Connection>>>,
+}
 
 pub struct KyCom {
     addr: SocketAddr,
@@ -48,7 +52,7 @@ impl KyCom {
     fn new(server: Server) -> Self {
         let addr = server.addr;
 
-        let pending_endpoints = Arc::new(Mutex::new(Some(HashMap::new())));
+        let pending_endpoints = Arc::new(Mutex::new(Some(EndpointMap::default())));
         let pending_endpoints2 = pending_endpoints.clone();
         let _listen_task = Task::spawn(async move {
             if let Err(err) = Self::listen(server, pending_endpoints2).await {
@@ -79,23 +83,26 @@ impl KyCom {
         Ok(Self::new(server))
     }
 
-    pub fn register_channel(&self, endpoint_id: u16) -> std::io::Result<Channel> {
-        let rx = {
-            let mut pending_endpoints = self.pending_endpoints.lock().unwrap();
-            let Some(pending_endpoints) = pending_endpoints.as_mut() else {
-                return Err(ErrorKind::ConnectionAborted.into());
-            };
-            match pending_endpoints.entry(endpoint_id) {
-                Entry::Occupied(_) => {
-                    return Err(Error::new(
-                        ErrorKind::AlreadyExists,
-                        format!("Endpoint {endpoint_id} already pending"),
-                    ));
-                }
+    pub fn register_channel(&self) -> std::io::Result<Channel> {
+        let mut pending_endpoints = self.pending_endpoints.lock().unwrap();
+        let Some(pending_endpoints) = pending_endpoints.as_mut() else {
+            return Err(ErrorKind::ConnectionAborted.into());
+        };
+
+        // If all ids are taken, the loop would be infinite
+        assert!(pending_endpoints.map.len() != 1 << 16);
+
+        let (tx, rx) = oneshot::channel();
+        let endpoint_id = loop {
+            let endpoint_id = pending_endpoints.next_id;
+            pending_endpoints.next_id = pending_endpoints.next_id.wrapping_add(1);
+
+            // The endpoint id may already be used if `next_id` has wrapped
+            match pending_endpoints.map.entry(endpoint_id) {
+                Entry::Occupied(_) => continue,
                 Entry::Vacant(entry) => {
-                    let (tx, rx) = oneshot::channel();
                     entry.insert(tx);
-                    rx
+                    break endpoint_id;
                 }
             }
         };
@@ -109,8 +116,7 @@ impl KyCom {
         &self,
         endpoint: types::ProtocolEndpoint<T>,
     ) -> std::io::Result<ChannelForwarder<T>> {
-        let endpoint_id = endpoint.id();
-        let channel = self.register_channel(endpoint_id)?;
+        let channel = self.register_channel()?;
 
         Ok(ChannelForwarder { channel, endpoint })
     }
@@ -148,7 +154,7 @@ impl KyCom {
                     let mut pending_endpoints = pending_endpoints.lock().unwrap();
                     // take() sets pending_endpoints to None
                     let pending_endpoints = pending_endpoints.take().expect("Unexpectedly state");
-                    for tx in pending_endpoints.into_values() {
+                    for tx in pending_endpoints.map.into_values() {
                         // Notify all pending endpoints
                         let _ = tx.send(Err(std::io::ErrorKind::ConnectionAborted.into()));
                     }
@@ -159,7 +165,7 @@ impl KyCom {
 
             let mut pending_endpoints = pending_endpoints.lock().unwrap();
             let pending_endpoints = pending_endpoints.as_mut().expect("Unexpectedly state");
-            if let Some(tx) = pending_endpoints.remove(&endpoint_id) {
+            if let Some(tx) = pending_endpoints.map.remove(&endpoint_id) {
                 // Ignore error (if the receiver is dropped)
                 let _ = tx.send(Ok(connection));
             } else {
