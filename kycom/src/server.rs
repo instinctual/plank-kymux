@@ -59,7 +59,7 @@ pub struct KyCom {
     // Some() initially, then None once accept() fails
     pending_endpoints: Arc<Mutex<Option<EndpointMap>>>,
     _listen_task: Task,
-    runner: Runner,
+    tasks: Vec<Task>,
 }
 
 impl KyCom {
@@ -78,7 +78,7 @@ impl KyCom {
             addr,
             pending_endpoints,
             _listen_task,
-            runner: Runner::new(),
+            tasks: Vec::new(),
         }
     }
 
@@ -131,8 +131,23 @@ impl KyCom {
         P: 'static,
         ChannelForwarder<P>: Forwarder,
     {
-        self.runner
-            .forward_async(ChannelForwarder { channel, endpoint });
+        // Clean up finished tasks
+        self.tasks.retain(|task| !task.0.is_finished());
+
+        let forwarder_name = std::any::type_name::<P>()
+            .rsplit("::")
+            .next()
+            .unwrap_or("Unknown");
+        debug!("Spawning {forwarder_name} forwarder");
+
+        let task = Task::spawn(async move {
+            let forwarder = ChannelForwarder { channel, endpoint };
+            if let Err(err) = forwarder.forward().await {
+                info!("{forwarder_name} forwarder ended with result {err:?}");
+            }
+        });
+
+        self.tasks.push(task);
     }
 
     pub fn register_and_forward<T: 'static>(
@@ -171,38 +186,6 @@ impl KyCom {
 
     /// Dummy function kept for compatibility.
     pub fn stop(self) {}
-}
-
-struct Runner {
-    tasks: Vec<Task>,
-}
-
-impl Runner {
-    fn new() -> Self {
-        Self { tasks: Vec::new() }
-    }
-
-    fn forward_async<T>(&mut self, forwarder: T)
-    where
-        T: Forwarder + Send + 'static,
-    {
-        // Clean up finished tasks
-        self.tasks.retain(|task| !task.0.is_finished());
-
-        let forwarder_name = std::any::type_name::<T>()
-            .rsplit("::")
-            .next()
-            .unwrap_or("Unknown");
-        debug!("Spawning {forwarder_name} forwarder");
-
-        let join_handle = Task::spawn(async move {
-            if let Err(err) = forwarder.forward().await {
-                info!("{forwarder_name} forwarder ended with result {err:?}");
-            }
-        });
-
-        self.tasks.push(join_handle);
-    }
 }
 
 pub async fn forward_protocol<T>(
