@@ -126,23 +126,13 @@ impl KyCom {
         Ok(channel)
     }
 
-    pub fn register<T>(
-        &self,
-        endpoint: types::ProtocolEndpoint<T>,
-    ) -> io::Result<ChannelForwarder<T>> {
-        let channel = self.register_channel()?;
-
-        Ok(ChannelForwarder { channel, endpoint })
-    }
-
-    pub fn forward_async<P>(&mut self, forwarder: ChannelForwarder<P>) -> KyComAddr
+    pub fn forward<P>(&mut self, channel: Channel, endpoint: types::ProtocolEndpoint<P>)
     where
         P: 'static,
         ChannelForwarder<P>: Forwarder,
     {
-        let addr = forwarder.addr();
-        self.runner.forward_async(forwarder);
-        addr
+        self.runner
+            .forward_async(ChannelForwarder { channel, endpoint });
     }
 
     pub fn register_and_forward<T: 'static>(
@@ -152,8 +142,9 @@ impl KyCom {
     where
         ChannelForwarder<T>: Forwarder,
     {
-        let forwarder = self.register(endpoint)?;
-        let addr = self.forward_async(forwarder);
+        let channel = self.register_channel()?;
+        let addr = channel.addr();
+        self.forward(channel, endpoint);
         Ok(addr)
     }
 
@@ -241,12 +232,6 @@ pub async fn forward_protocol_bi<TX: Send + 'static, RX: Send + 'static>(
 pub struct ChannelForwarder<P> {
     channel: Channel,
     endpoint: types::ProtocolEndpoint<P>,
-}
-
-impl<P> ChannelForwarder<P> {
-    pub fn addr(&self) -> KyComAddr {
-        self.channel.addr()
-    }
 }
 
 #[async_trait]
