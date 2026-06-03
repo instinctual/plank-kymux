@@ -18,10 +18,10 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+use crate::ProtocolError;
 use crate::clock;
 use crate::router::KyChannel;
 use crate::runtime::{self, Duration, SystemTime, UNIX_EPOCH};
-use crate::ProtocolError;
 
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use kymux_types as types;

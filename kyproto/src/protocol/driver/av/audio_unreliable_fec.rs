@@ -18,13 +18,13 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+use crate::ProtocolStats;
+use crate::protocol::driver;
 use crate::protocol::driver::util::seq::Sequencer;
-use crate::protocol::driver::{self, av};
 use crate::protocol::{ProtocolError, ProtocolRecvDriver, ProtocolSendDriver};
 use crate::router::KyChannel;
 use crate::runtime::{self, Instant};
 use crate::task::Task;
-use crate::ProtocolStats;
 
 use std::{collections::VecDeque, time::Duration};
 
@@ -595,13 +595,13 @@ impl PendingGroup {
         let mut cached_min_instant = None;
 
         if !self.config_packet.is_none() {
-            if let ConfigPacket::Ready(packet) = &self.config_packet {
-                if packet.kypacket_seq == next_kypacket_seq {
-                    // The config packet is the next expected packet
-                    return NextPacket::Ready(PacketRef {
-                        config_packet: true,
-                    });
-                }
+            if let ConfigPacket::Ready(packet) = &self.config_packet
+                && packet.kypacket_seq == next_kypacket_seq
+            {
+                // The config packet is the next expected packet
+                return NextPacket::Ready(PacketRef {
+                    config_packet: true,
+                });
             }
 
             let datagrams = &self.datagrams;

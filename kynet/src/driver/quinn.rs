@@ -63,7 +63,7 @@ impl rustls::client::danger::ServerCertVerifier for HashCertVerifier {
         _ocsp_response: &[u8],
         _now: rustls::pki_types::UnixTime,
     ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
-        use ring::digest::{digest, SHA256};
+        use ring::digest::{SHA256, digest};
         let actual_hash = digest(&SHA256, end_entity.as_ref());
         if actual_hash.as_ref() == self.expected_hash.as_slice() {
             Ok(rustls::client::danger::ServerCertVerified::assertion())

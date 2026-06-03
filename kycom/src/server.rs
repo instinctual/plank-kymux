@@ -27,8 +27,8 @@ use kymux_types as types;
 use kymux_types::ProtocolError;
 #[allow(unused)]
 use log::{debug, error, info, warn};
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::io;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};

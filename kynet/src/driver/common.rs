@@ -18,9 +18,9 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+use crate::Connection;
 use crate::cert::{Certificate, PrivateKey};
 use crate::error::ConnectionError;
-use crate::Connection;
 
 use std::net::{Ipv6Addr, SocketAddr};
 use std::sync::Arc;
@@ -89,10 +89,10 @@ impl CommonServer {
         let socket = Socket::new(domain, Type::DGRAM, Some(Protocol::UDP))
             .map_err(|e| ConnectionError(format!("Socket creation failed: {e:?}")))?;
 
-        if addr.is_ipv6() {
-            if let Err(e) = socket.set_only_v6(false) {
-                log::debug!("Unable to make socket dual-stack: {e}");
-            }
+        if addr.is_ipv6()
+            && let Err(e) = socket.set_only_v6(false)
+        {
+            log::debug!("Unable to make socket dual-stack: {e}");
         }
 
         socket

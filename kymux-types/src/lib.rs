@@ -116,10 +116,10 @@ impl<T> ProtocolSend<T> {
 
         runtime::spawn(async move {
             while let Some(packet) = rx.recv().await {
-                if let Err(err) = self.send(packet).await {
-                    if errors_tx.send(err).await.is_err() {
-                        break;
-                    }
+                if let Err(err) = self.send(packet).await
+                    && errors_tx.send(err).await.is_err()
+                {
+                    break;
                 }
             }
         });

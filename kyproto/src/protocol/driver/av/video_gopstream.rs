@@ -81,12 +81,12 @@
 //! Every time a new QUIC stream is opened by the server, the previous one is
 //! reset, so no more retransmissions will occur for the old GOPs.
 
-use crate::protocol::driver::{self, av};
+use crate::ProtocolStats;
+use crate::protocol::driver;
 use crate::protocol::{ProtocolError, ProtocolRecvDriver, ProtocolSendDriver};
 use crate::router::KyChannel;
 use crate::runtime;
 use crate::task::Task;
-use crate::ProtocolStats;
 
 use async_trait::async_trait;
 use byteorder::{BigEndian, ByteOrder, WriteBytesExt};
@@ -174,10 +174,10 @@ impl ProtocolSendDriver for VideoGopStreamProtocolSendDriver {
                             .map_err(ProtocolError::new)?;
                         new_stream.flush().await.map_err(ProtocolError::new)?;
 
-                        if let Some(mut old_stream) = self.current_stream.replace(new_stream) {
-                            if let Err(err) = old_stream.finish().await {
-                                warn!("Could not close stream: {err}");
-                            }
+                        if let Some(mut old_stream) = self.current_stream.replace(new_stream)
+                            && let Err(err) = old_stream.finish().await
+                        {
+                            warn!("Could not close stream: {err}");
                         }
                     }
 

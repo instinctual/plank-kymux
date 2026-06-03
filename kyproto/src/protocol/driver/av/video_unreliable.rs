@@ -242,13 +242,13 @@
 //! packets only after the GOP keyframe is sent. It will depend if we use an
 //! intra-refresh strategy or if we send keyframes often.
 
+use crate::ProtocolStats;
+use crate::protocol::driver;
 use crate::protocol::driver::util::seq::Sequencer;
-use crate::protocol::driver::{self, av};
 use crate::protocol::{ProtocolError, ProtocolRecvDriver, ProtocolSendDriver};
 use crate::router::KyChannel;
 use crate::runtime::{self, Instant};
 use crate::task::Task;
-use crate::ProtocolStats;
 
 use std::{collections::VecDeque, time::Duration};
 
@@ -778,14 +778,14 @@ impl PendingGroups {
         for (pending_group_index, pending_group) in self.pending_groups.iter().enumerate() {
             // Ignore pending groups without config packet
             if !pending_group.config_packet.is_none() {
-                if let ConfigPacket::Ready(packet) = &pending_group.config_packet {
-                    if packet.kypacket_seq == next_kypacket_seq {
-                        // The config packet is the next expected packet
-                        return NextPacket::Ready(PacketRef {
-                            pending_group_index,
-                            config_packet: true,
-                        });
-                    }
+                if let ConfigPacket::Ready(packet) = &pending_group.config_packet
+                    && packet.kypacket_seq == next_kypacket_seq
+                {
+                    // The config packet is the next expected packet
+                    return NextPacket::Ready(PacketRef {
+                        pending_group_index,
+                        config_packet: true,
+                    });
                 }
 
                 let datagrams = &pending_group.datagrams;
@@ -1060,7 +1060,9 @@ mod tests {
             // payload
             assert_eq!(
                 &packet.payload[..],
-                [1, 3, 5, 7, 9, 11, 13, 2, 4, 6, 8, 10, 12, 0xF0, 0xE0, 0xD0, 0xC0]
+                [
+                    1, 3, 5, 7, 9, 11, 13, 2, 4, 6, 8, 10, 12, 0xF0, 0xE0, 0xD0, 0xC0
+                ]
             );
         } else {
             panic!("Not a media packet");

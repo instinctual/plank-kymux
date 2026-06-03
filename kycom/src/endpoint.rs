@@ -18,12 +18,12 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use crate::connection::Connection;
 use crate::KyComAddr;
+use crate::connection::Connection;
 
 use async_trait::async_trait;
 use kymux_types as types;
-use kymux_types::{ipc, ProtocolError};
+use kymux_types::{ProtocolError, ipc};
 #[allow(unused)]
 use log::{debug, error, info, warn};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};

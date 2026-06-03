@@ -34,7 +34,7 @@ use bytes::{Buf, Bytes, BytesMut};
 use kymux_util::*;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use wasm_bindgen::prelude::*;
-use wasm_bindgen_futures::{spawn_local, JsFuture};
+use wasm_bindgen_futures::{JsFuture, spawn_local};
 
 impl From<web_sys::WebTransport> for Connection {
     fn from(value: web_sys::WebTransport) -> Self {

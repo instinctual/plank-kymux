@@ -223,9 +223,8 @@ impl Control {
     async fn recv_msg(rx: &mut RecvStream) -> Result<Option<ControlMsg>, ControlError> {
         let mut buf = [0u8; 4];
         let res = rx.read_exact(&mut buf).await;
-        if res
-            .as_ref()
-            .is_err_and(|e| e.kind() == std::io::ErrorKind::UnexpectedEof)
+        if let Err(err) = &res
+            && err.kind() == std::io::ErrorKind::UnexpectedEof
         {
             return Ok(None);
         }

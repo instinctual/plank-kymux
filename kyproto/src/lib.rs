@@ -40,9 +40,9 @@ pub use protocol::clock_sync::{
 };
 pub use protocol::{AudioProtocol, VideoProtocol};
 
+pub use kynet::ConnectionStats;
 pub use kynet::error::ConnectionError;
 pub use kynet::init_crypto;
-pub use kynet::ConnectionStats;
 
 mod auth;
 pub mod clock;

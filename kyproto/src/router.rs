@@ -23,8 +23,8 @@
 use crate::runtime;
 use crate::task::Task;
 
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::future::Future;
 
 use bytes::{BufMut, Bytes, BytesMut};

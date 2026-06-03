@@ -19,12 +19,12 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #[cfg(target_family = "wasm")]
-pub use kywasmtime::{sleep, sleep_until, timeout, timeout_at, Instant, SystemTime, UNIX_EPOCH};
+pub use kywasmtime::{Instant, SystemTime, UNIX_EPOCH, sleep, sleep_until, timeout, timeout_at};
 #[cfg(target_family = "wasm")]
 pub use std::time::Duration;
 #[cfg(not(target_family = "wasm"))]
 pub use std::time::{SystemTime, UNIX_EPOCH};
 #[cfg(not(target_family = "wasm"))]
-pub use tokio::time::{sleep, sleep_until, timeout, timeout_at, Duration, Instant};
+pub use tokio::time::{Duration, Instant, sleep, sleep_until, timeout, timeout_at};
 
 pub use kymux_types::runtime::*;

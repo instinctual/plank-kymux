@@ -18,10 +18,10 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use crate::protocol::driver::{self, av};
+use crate::ProtocolStats;
+use crate::protocol::driver;
 use crate::protocol::{ProtocolError, ProtocolRecvDriver, ProtocolSendDriver};
 use crate::router::KyChannel;
-use crate::ProtocolStats;
 
 use async_trait::async_trait;
 use bytes::BytesMut;
