@@ -18,7 +18,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use std::io::{Error, ErrorKind, Result};
+use std::io;
 use std::net::SocketAddr;
 use std::str::FromStr;
 use url::Url;
@@ -65,56 +65,48 @@ impl KyComAddr {
         format!("kymux://{}/{:X}", self.addr, self.endpoint_id)
     }
 
-    pub fn parse(url: &str) -> Result<Self> {
-        let url = Url::parse(url).map_err(|_| Error::from(ErrorKind::InvalidData))?;
-
-        if url.scheme() != "kymux" {
-            return Err(Error::new(ErrorKind::InvalidData, "Invalid scheme"));
+    pub fn parse(url: &str) -> io::Result<Self> {
+        #[cold]
+        fn invalid_data<E>(err: E) -> io::Error
+        where
+            E: Into<Box<dyn std::error::Error + Send + Sync>>,
+        {
+            io::Error::new(io::ErrorKind::InvalidData, err)
         }
 
-        let host = url
-            .host_str()
-            .ok_or_else(|| Error::new(ErrorKind::InvalidData, "Missing host"))?;
-        let port = url
-            .port()
-            .ok_or_else(|| Error::new(ErrorKind::InvalidData, "Missing port"))?;
+        let url = Url::parse(url).map_err(invalid_data)?;
+
+        if url.scheme() != "kymux" {
+            return Err(invalid_data("Invalid scheme"));
+        }
+
+        let host = url.host_str().ok_or_else(|| invalid_data("Missing host"))?;
+        let port = url.port().ok_or_else(|| invalid_data("Missing port"))?;
 
         let addr = format!("{host}:{port}")
             .parse::<SocketAddr>()
-            .map_err(|e| {
-                Error::new(
-                    ErrorKind::InvalidData,
-                    format!("Invalid socket address: {e}"),
-                )
-            })?;
+            .map_err(invalid_data)?;
 
         let path_segments = url
             .path_segments()
-            .ok_or_else(|| Error::new(ErrorKind::InvalidData, "Missing endpoint id"))?
+            .ok_or_else(|| invalid_data("Missing endpoint id"))?
             .collect::<Vec<&str>>();
 
         if path_segments.len() != 1 {
-            return Err(Error::new(
-                ErrorKind::InvalidData,
-                "Expected a single endpoint id",
-            ));
+            return Err(invalid_data("Expected a single endpoint id"));
         }
 
-        let endpoint_id = u16::from_str_radix(path_segments[0], 16).map_err(|e| {
-            Error::new(
-                ErrorKind::InvalidData,
-                format!("Invalid endpoint ID (hex): {e}"),
-            )
-        })?;
+        let endpoint_id = u16::from_str_radix(path_segments[0], 16)
+            .map_err(|e| invalid_data(format!("Invalid endpoint ID (hex): {e}")))?;
 
         Ok(Self { addr, endpoint_id })
     }
 }
 
 impl FromStr for KyComAddr {
-    type Err = Error;
+    type Err = io::Error;
 
-    fn from_str(s: &str) -> Result<Self> {
+    fn from_str(s: &str) -> io::Result<Self> {
         Self::parse(s)
     }
 }
