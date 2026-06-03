@@ -29,7 +29,7 @@ use kymux_types::ProtocolError;
 use log::{debug, error, info, warn};
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
-use std::io::{Error, ErrorKind};
+use std::io::ErrorKind;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use tokio::sync::oneshot;
@@ -169,10 +169,7 @@ impl KyCom {
                 // Ignore error (if the receiver is dropped)
                 let _ = tx.send(Ok(connection));
             } else {
-                return Err(Error::new(
-                    ErrorKind::NotFound,
-                    format!("Connection received for unknown endpoint id: {endpoint_id:X}"),
-                ));
+                warn!("Connection received for unknown endpoint id: {endpoint_id:X}");
             }
         }
     }
