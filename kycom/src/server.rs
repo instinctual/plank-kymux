@@ -40,6 +40,20 @@ struct EndpointMap {
     map: HashMap<u16, oneshot::Sender<std::io::Result<Connection>>>,
 }
 
+struct Guard<'a>(&'a Mutex<Option<EndpointMap>>);
+
+impl Drop for Guard<'_> {
+    fn drop(&mut self) {
+        let mut pending_endpoints = self.0.lock().unwrap();
+        // take() sets pending_endpoints to None
+        let pending_endpoints = pending_endpoints.take().unwrap();
+        for tx in pending_endpoints.map.into_values() {
+            // Notify all pending endpoints
+            let _ = tx.send(Err(std::io::ErrorKind::ConnectionAborted.into()));
+        }
+    }
+}
+
 pub struct KyCom {
     addr: SocketAddr,
     // Some() initially, then None once accept() fails
@@ -147,24 +161,14 @@ impl KyCom {
         mut server: Server,
         pending_endpoints: Arc<Mutex<Option<EndpointMap>>>,
     ) -> std::io::Result<()> {
+        let _guard = Guard(&pending_endpoints);
+
         loop {
-            let connection = match server.accept().await {
-                Ok(connection) => connection,
-                Err(err) => {
-                    let mut pending_endpoints = pending_endpoints.lock().unwrap();
-                    // take() sets pending_endpoints to None
-                    let pending_endpoints = pending_endpoints.take().expect("Unexpectedly state");
-                    for tx in pending_endpoints.map.into_values() {
-                        // Notify all pending endpoints
-                        let _ = tx.send(Err(std::io::ErrorKind::ConnectionAborted.into()));
-                    }
-                    return Err(err);
-                }
-            };
+            let connection = server.accept().await?;
             let endpoint_id = connection.addr.endpoint_id;
 
             let mut pending_endpoints = pending_endpoints.lock().unwrap();
-            let pending_endpoints = pending_endpoints.as_mut().expect("Unexpectedly state");
+            let pending_endpoints = pending_endpoints.as_mut().unwrap();
             if let Some(tx) = pending_endpoints.map.remove(&endpoint_id) {
                 // Ignore error (if the receiver is dropped)
                 let _ = tx.send(Ok(connection));
