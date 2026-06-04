@@ -29,7 +29,7 @@ use kymux_types::ProtocolError;
 use log::{debug, error, info, warn};
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
-use std::io::ErrorKind;
+use std::io;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use tokio::sync::oneshot;
@@ -37,7 +37,7 @@ use tokio::sync::oneshot;
 #[derive(Default)]
 struct EndpointMap {
     next_id: u16,
-    map: HashMap<u16, oneshot::Sender<std::io::Result<Connection>>>,
+    map: HashMap<u16, oneshot::Sender<io::Result<Connection>>>,
 }
 
 struct Guard<'a>(&'a Mutex<Option<EndpointMap>>);
@@ -49,7 +49,7 @@ impl Drop for Guard<'_> {
         let pending_endpoints = pending_endpoints.take().unwrap();
         for tx in pending_endpoints.map.into_values() {
             // Notify all pending endpoints
-            let _ = tx.send(Err(std::io::ErrorKind::ConnectionAborted.into()));
+            let _ = tx.send(Err(io::ErrorKind::ConnectionAborted.into()));
         }
     }
 }
@@ -82,25 +82,25 @@ impl KyCom {
         }
     }
 
-    pub async fn start_on_addr(addr: SocketAddr) -> std::io::Result<Self> {
+    pub async fn start_on_addr(addr: SocketAddr) -> io::Result<Self> {
         let server = Server::start_on_addr(addr).await?;
         Ok(Self::new(server))
     }
 
-    pub async fn start_on_port(port: u16) -> std::io::Result<Self> {
+    pub async fn start_on_port(port: u16) -> io::Result<Self> {
         let server = Server::start_on_port(port).await?;
         Ok(Self::new(server))
     }
 
-    pub async fn start_on_any_port(local_ports: std::ops::Range<u16>) -> std::io::Result<Self> {
+    pub async fn start_on_any_port(local_ports: std::ops::Range<u16>) -> io::Result<Self> {
         let server = Server::start_on_any_port(local_ports).await?;
         Ok(Self::new(server))
     }
 
-    pub fn register_channel(&self) -> std::io::Result<Channel> {
+    pub fn register_channel(&self) -> io::Result<Channel> {
         let mut pending_endpoints = self.pending_endpoints.lock().unwrap();
         let Some(pending_endpoints) = pending_endpoints.as_mut() else {
-            return Err(ErrorKind::ConnectionAborted.into());
+            return Err(io::ErrorKind::ConnectionAborted.into());
         };
 
         // If all ids are taken, the loop would be infinite
@@ -129,7 +129,7 @@ impl KyCom {
     pub fn register<T>(
         &self,
         endpoint: types::ProtocolEndpoint<T>,
-    ) -> std::io::Result<ChannelForwarder<T>> {
+    ) -> io::Result<ChannelForwarder<T>> {
         let channel = self.register_channel()?;
 
         Ok(ChannelForwarder { channel, endpoint })
@@ -148,7 +148,7 @@ impl KyCom {
     pub fn register_and_forward<T: 'static>(
         &mut self,
         endpoint: types::ProtocolEndpoint<T>,
-    ) -> std::io::Result<KyComAddr>
+    ) -> io::Result<KyComAddr>
     where
         ChannelForwarder<T>: Forwarder,
     {
@@ -160,7 +160,7 @@ impl KyCom {
     async fn listen(
         mut server: Server,
         pending_endpoints: Arc<Mutex<Option<EndpointMap>>>,
-    ) -> std::io::Result<()> {
+    ) -> io::Result<()> {
         let _guard = Guard(&pending_endpoints);
 
         loop {
