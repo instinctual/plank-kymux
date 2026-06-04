@@ -26,7 +26,7 @@ use crate::runtime::{self, Instant};
 use crate::task::Task;
 use crate::ProtocolStats;
 
-use std::time::Duration;
+use std::{collections::VecDeque, time::Duration};
 
 use async_trait::async_trait;
 use byteorder::{BigEndian, ByteOrder};
@@ -496,7 +496,7 @@ impl ConfigPacket {
 #[derive(Debug)]
 struct PendingGroup {
     config_packet: ConfigPacket,
-    datagrams: Vec<DatagramPacket>,
+    datagrams: VecDeque<DatagramPacket>,
     segments: Vec<DatagramSegments>,
 }
 
@@ -504,7 +504,7 @@ impl PendingGroup {
     fn new() -> Self {
         Self {
             config_packet: ConfigPacket::None,
-            datagrams: Vec::new(),
+            datagrams: VecDeque::new(),
             segments: Vec::new(),
         }
     }
@@ -643,8 +643,10 @@ impl PendingGroup {
                         packet: config_packet.packet,
                     }
                 } else {
-                    assert!(!self.datagrams.is_empty());
-                    let datagram = self.datagrams.remove(0);
+                    let datagram = self
+                        .datagrams
+                        .pop_front()
+                        .expect("Expected a pending datagram");
                     self.drop_expired_segments(datagram.kypacket_seq);
                     Action::Packet {
                         kypacket_seq: datagram.kypacket_seq,
