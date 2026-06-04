@@ -958,6 +958,7 @@ struct DatagramSegments {
     total_segments: Option<usize>, // number of segments in the kypacket
     segments: Vec<Option<Bytes>>,  // datagram i at index i
     segments_count: usize,         // number of non-None datagrams in segments
+    total_segment_bytes: usize,    // number of bytes in non-None datagrams
 }
 
 impl DatagramSegments {
@@ -967,6 +968,7 @@ impl DatagramSegments {
             total_segments: None,
             segments: Vec::new(),
             segments_count: 0,
+            total_segment_bytes: 0,
         }
     }
 
@@ -974,12 +976,13 @@ impl DatagramSegments {
         self.total_segments == Some(self.segments_count)
     }
 
-    fn merge_segments(segments: &Vec<Option<Bytes>>) -> Bytes {
-        let mut bytes = BytesMut::new();
+    fn merge_segments(segments: &[Option<Bytes>], total_segment_bytes: usize) -> Bytes {
+        let mut bytes = BytesMut::with_capacity(total_segment_bytes);
         for segment in segments {
             let segment = segment.as_ref().expect("Unexpected None segment");
             bytes.put_slice(segment);
         }
+        debug_assert_eq!(bytes.len(), total_segment_bytes);
         bytes.freeze()
     }
 
@@ -988,6 +991,7 @@ impl DatagramSegments {
             self.segments.resize(index + 1, None);
         }
         if self.segments[index].is_none() {
+            self.total_segment_bytes += segment.len();
             self.segments[index] = Some(segment);
             self.segments_count += 1;
             if end {
@@ -1001,7 +1005,7 @@ impl DatagramSegments {
 
     fn assemble(self) -> DatagramPacket {
         assert!(self.is_complete());
-        let data = Self::merge_segments(&self.segments);
+        let data = Self::merge_segments(&self.segments, self.total_segment_bytes);
 
         // TODO for now, the kypacket header is sent "as is" over datagrams.
         // In the future, they might be rewritten (we don't need the same data,
