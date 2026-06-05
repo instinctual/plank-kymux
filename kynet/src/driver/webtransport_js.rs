@@ -25,10 +25,14 @@ use crate::{
 };
 
 use std::cell::RefCell;
+use std::future::Future;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
 use async_trait::async_trait;
-use bytes::Bytes;
+use bytes::{Buf, Bytes, BytesMut};
 use kymux_util::*;
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::{spawn_local, JsFuture};
 
@@ -317,29 +321,47 @@ impl ConnectionDriver for WebTransportJSConnectionDriver {
 #[derive(Debug)]
 struct WebTransportJSSendStreamDriver {
     writer: web_sys::WritableStreamDefaultWriter,
+    state: WriterState,
+}
+
+enum WriterState {
+    Idle,
+    Running(WriteFuture),
+    Invalid,
+}
+
+impl std::fmt::Debug for WriterState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            WriterState::Idle => f.write_str("Idle"),
+            WriterState::Running(_) => f.write_str("Running"),
+            WriterState::Invalid => f.write_str("Invalid"),
+        }
+    }
 }
 
 impl WebTransportJSSendStreamDriver {
     fn new(send: web_sys::WritableStream) -> Self {
         let writer = send.get_writer().expect("Invalid writable stream");
-        Self { writer }
+        Self {
+            writer,
+            state: WriterState::Idle,
+        }
     }
 }
 
 #[async_trait(?Send)]
 impl SendStreamDriver for WebTransportJSSendStreamDriver {
     async fn write(&mut self, buf: &[u8]) -> Result<usize, WriteError> {
-        // The JavaScript API necessarily writes the whole buffer
-        self.write_all(buf).await?;
-        Ok(buf.len())
+        AsyncWriteExt::write(self, buf)
+            .await
+            .map_err(|e| WriteError(format!("{e}")))
     }
 
     async fn write_all(&mut self, buf: &[u8]) -> Result<(), WriteError> {
-        let typed_array = js_sys::Uint8Array::from(buf);
-        let data_js_value = JsValue::from(typed_array);
-        let promise = self.writer.write_with_chunk(&data_js_value);
-        JsFuture::from(promise).await?;
-        Ok(())
+        AsyncWriteExt::write_all(self, buf)
+            .await
+            .map_err(|e| WriteError(format!("{e}")))
     }
 
     async fn finish(&mut self) -> Result<(), ClosedStreamError> {
@@ -362,9 +384,116 @@ impl SendStreamDriver for WebTransportJSSendStreamDriver {
     }
 }
 
+impl AsyncWrite for WebTransportJSSendStreamDriver {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<std::io::Result<usize>> {
+        loop {
+            match std::mem::replace(&mut self.state, WriterState::Invalid) {
+                WriterState::Idle => {
+                    // Start writing
+                    let fut = WriteFuture::start(&self.writer, buf);
+                    self.state = WriterState::Running(fut);
+
+                    // Report what was submitted to write
+                    return Poll::Ready(Ok(buf.len()));
+                }
+                WriterState::Running(mut fut) => match Pin::new(&mut fut).poll(cx) {
+                    Poll::Ready(res) => {
+                        self.state = WriterState::Idle;
+                        res?;
+                    }
+                    Poll::Pending => {
+                        // Nope, we're occupied
+                        self.state = WriterState::Running(fut);
+                        return Poll::Pending;
+                    }
+                },
+                WriterState::Invalid => unreachable!(),
+            }
+        }
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        match std::mem::replace(&mut self.state, WriterState::Invalid) {
+            WriterState::Idle => {
+                self.state = WriterState::Idle;
+                Poll::Ready(Ok(()))
+            }
+            WriterState::Running(mut fut) => match Pin::new(&mut fut).poll(cx) {
+                Poll::Ready(res) => {
+                    self.state = WriterState::Idle;
+                    Poll::Ready(res)
+                }
+                Poll::Pending => {
+                    self.state = WriterState::Running(fut);
+                    Poll::Pending
+                }
+            },
+            WriterState::Invalid => unreachable!(),
+        }
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        // There is no shutdown in the API, close() would close both directions,
+        // so just flush
+        self.poll_flush(cx)
+    }
+}
+
+struct WriteFuture {
+    fut: JsFuture,
+}
+
+impl WriteFuture {
+    fn start(writer: &web_sys::WritableStreamDefaultWriter, buf: &[u8]) -> Self {
+        // Start immediately to avoid buffer copy
+        let typed_array = js_sys::Uint8Array::from(buf);
+        let data_js_value = JsValue::from(typed_array);
+        let promise = writer.write_with_chunk(&data_js_value);
+        let fut = JsFuture::from(promise);
+        Self { fut }
+    }
+}
+
+impl Future for WriteFuture {
+    type Output = std::io::Result<()>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let res = std::task::ready!(Pin::new(&mut self.fut).poll(cx))
+            .map(|_| ())
+            .map_err(js_value_to_io_error);
+        Poll::Ready(res)
+    }
+}
+
 #[derive(Debug)]
 struct WebTransportJSRecvStreamDriver {
     reader: web_sys::ReadableStreamByobReader,
+    state: ReaderState,
+}
+
+struct ReaderData {
+    reader: web_sys::ReadableStreamByobReader,
+    buf: BytesMut,
+}
+
+enum ReaderState {
+    Idle(ReaderData),
+    Running(ReadFuture),
+    Invalid,
+}
+
+impl std::fmt::Debug for ReaderState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ReaderState::Idle(data) => f.debug_tuple("Idle").field(&data.buf.len()).finish(),
+            ReaderState::Running(_) => f.write_str("Running"),
+            ReaderState::Invalid => f.write_str("Invalid"),
+        }
+    }
 }
 
 impl WebTransportJSRecvStreamDriver {
@@ -375,32 +504,27 @@ impl WebTransportJSRecvStreamDriver {
             .get_reader_with_options(&options)
             .dyn_into::<web_sys::ReadableStreamByobReader>()
             .expect("Invalid readable stream");
-        Self { reader }
+        let data = ReaderData {
+            reader: reader.clone(),
+            buf: BytesMut::new(),
+        };
+        Self {
+            reader,
+            state: ReaderState::Idle(data),
+        }
     }
 }
 
 #[async_trait(?Send)]
 impl RecvStreamDriver for WebTransportJSRecvStreamDriver {
     async fn read(&mut self, buf: &mut [u8]) -> Result<Option<usize>, ReadError> {
-        let typed_array = js_sys::Uint8Array::new(&JsValue::from(buf.len()));
-
-        let promise = self.reader.read_with_array_buffer_view(&typed_array);
-        let obj = JsFuture::from(promise).await?;
-        let done = js_sys::Reflect::get(&obj, &JsValue::from("done"))?
-            .as_bool()
-            .unwrap_or(false);
-        if done {
-            return Ok(None); // EOS
+        if buf.is_empty() {
+            return Ok(Some(0));
         }
-
-        let array = js_sys::Reflect::get(&obj, &JsValue::from("value"))?
-            .dyn_into::<js_sys::Uint8Array>()
-            .expect("Unexpected read value");
-
-        let len = array.byte_length() as usize;
-        array.copy_to(&mut buf[..len]);
-
-        Ok(Some(len))
+        AsyncReadExt::read(self, buf)
+            .await
+            .map(|size| if size > 0 { Some(size) } else { None })
+            .map_err(|e| ReadError(format!("{e}")))
     }
 
     fn stop(&mut self) {
@@ -414,6 +538,100 @@ impl RecvStreamDriver for WebTransportJSRecvStreamDriver {
         let promise = self.reader.closed();
         JsFuture::from(promise).await?;
         Ok(())
+    }
+}
+
+impl AsyncRead for WebTransportJSRecvStreamDriver {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        dst: &mut ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        loop {
+            match std::mem::replace(&mut self.state, ReaderState::Invalid) {
+                ReaderState::Idle(mut data) => {
+                    if !data.buf.is_empty() {
+                        // Data is available immediately
+                        let n = data.buf.len().min(dst.remaining());
+                        dst.put_slice(&data.buf[..n]);
+                        data.buf.advance(n);
+                        self.state = ReaderState::Idle(data);
+                        return Poll::Ready(Ok(()));
+                    }
+                    self.state = ReaderState::Running(ReadFuture::new(data));
+                }
+                ReaderState::Running(mut fut) => match Pin::new(&mut fut).poll(cx) {
+                    Poll::Ready(res) => {
+                        // Report if the last operation failed or start again
+                        self.state = ReaderState::Idle(fut.data);
+                        res?;
+                    }
+                    Poll::Pending => {
+                        // Nope, we're occupied
+                        self.state = ReaderState::Running(fut);
+                        return Poll::Pending;
+                    }
+                },
+                ReaderState::Invalid => unreachable!(),
+            }
+        }
+    }
+}
+
+struct ReadFuture {
+    data: ReaderData,
+    fut: Option<JsFuture>,
+}
+
+impl ReadFuture {
+    fn new(data: ReaderData) -> Self {
+        Self { data, fut: None }
+    }
+
+    fn poll_internal(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<usize>> {
+        let this = Pin::into_inner(self);
+
+        let fut = this.fut.get_or_insert_with(|| {
+            this.data.buf.resize(8192, 0);
+            let typed_array = js_sys::Uint8Array::new(&JsValue::from(this.data.buf.len()));
+            let promise = this.data.reader.read_with_array_buffer_view(&typed_array);
+            JsFuture::from(promise)
+        });
+
+        let obj = std::task::ready!(Pin::new(fut).poll(cx)).map_err(js_value_to_io_error)?;
+        this.fut = None;
+
+        let done = js_sys::Reflect::get(&obj, &JsValue::from("done"))
+            .map_err(js_value_to_io_error)?
+            .as_bool()
+            .unwrap_or(false);
+        if done {
+            return Poll::Ready(Ok(0));
+        }
+
+        let array = js_sys::Reflect::get(&obj, &JsValue::from("value"))
+            .map_err(js_value_to_io_error)?
+            .dyn_into::<js_sys::Uint8Array>()
+            .expect("Unexpected read value");
+
+        let len = array.byte_length() as usize;
+        // The array is initially created with a length of data.buf.len()
+        array.copy_to(&mut this.data.buf[..len]);
+
+        Poll::Ready(Ok(len))
+    }
+}
+
+impl Future for ReadFuture {
+    type Output = std::io::Result<usize>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let res = std::task::ready!(self.as_mut().poll_internal(cx));
+        match res {
+            Ok(n) => self.data.buf.truncate(n),
+            Err(_) => self.data.buf.clear(),
+        }
+        Poll::Ready(res)
     }
 }
 
@@ -476,3 +694,7 @@ impl_from_jsvalue!(ReadError);
 impl_from_jsvalue!(ReadExactError);
 impl_from_jsvalue!(WriteError);
 impl_from_jsvalue!(ClosedStreamError);
+
+fn js_value_to_io_error(err: JsValue) -> std::io::Error {
+    std::io::Error::other(format!("{err:?}"))
+}
