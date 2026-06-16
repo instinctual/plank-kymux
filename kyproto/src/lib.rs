@@ -349,7 +349,6 @@ pub struct Connection {
     //
     // quinn example: https://github.com/quinn-rs/quinn/blob/e652b6d999f053ffe21eeea247854882ae480281/quinn-proto/src/lib.rs#L230
     next_endpoint_index: AtomicU16,
-    initiator: u16,
 
     protocol_stats: KyArc<KyMutex<ProtocolStats>>,
 }
@@ -360,8 +359,7 @@ impl Connection {
             conn,
             router,
             control,
-            initiator,
-            next_endpoint_index: AtomicU16::new(0),
+            next_endpoint_index: AtomicU16::new(initiator),
             protocol_stats: KyArc::new(KyMutex::new(ProtocolStats::default())),
         }
     }
@@ -409,8 +407,7 @@ impl Connection {
             conn,
             router,
             control,
-            initiator: INITIATOR_CLIENT,
-            next_endpoint_index: AtomicU16::new(0),
+            next_endpoint_index: AtomicU16::new(INITIATOR_CLIENT),
             protocol_stats: KyArc::new(KyMutex::new(ProtocolStats::default())),
         })
     }
@@ -457,21 +454,16 @@ impl Connection {
         Ok(UnauthenticatedConnection::new(conn, auth, tx, rx))
     }
 
-    fn get_endpoint_id(&self, id: Option<u16>) -> u16 {
-        if let Some(id) = id {
-            id
-        } else {
-            let index = self.next_endpoint_index.fetch_add(1, Ordering::Relaxed);
-            (index << 1) | self.initiator
-        }
+    fn get_endpoint_id(&self) -> u16 {
+        // Increment by 2 to keep the parity bit (client/server).
+        self.next_endpoint_index.fetch_add(2, Ordering::Relaxed)
     }
 
     pub async fn register_video_endpoint(
         &self,
-        id: Option<u16>,
         video_protocol: VideoProtocol,
     ) -> Result<types::VideoServerEndpoint, ProtocolError> {
-        let id = self.get_endpoint_id(id);
+        let id = self.get_endpoint_id();
         let ready_notifier = self
             .control
             .register_ready_notifier(id)
@@ -515,10 +507,9 @@ impl Connection {
 
     pub async fn register_audio_endpoint(
         &self,
-        id: Option<u16>,
         audio_protocol: AudioProtocol,
     ) -> Result<types::AudioServerEndpoint, ProtocolError> {
-        let id = self.get_endpoint_id(id);
+        let id = self.get_endpoint_id();
         let ready_notifier = self
             .control
             .register_ready_notifier(id)
@@ -560,11 +551,8 @@ impl Connection {
         Ok(driver.into())
     }
 
-    pub async fn register_data_endpoint(
-        &self,
-        id: Option<u16>,
-    ) -> Result<types::DataEndpoint, ProtocolError> {
-        let id = self.get_endpoint_id(id);
+    pub async fn register_data_endpoint(&self) -> Result<types::DataEndpoint, ProtocolError> {
+        let id = self.get_endpoint_id();
         let ready_notifier = self
             .control
             .register_ready_notifier(id)
@@ -596,11 +584,8 @@ impl Connection {
         Ok(driver.into())
     }
 
-    pub async fn register_input_endpoint(
-        &self,
-        id: Option<u16>,
-    ) -> Result<types::InputEndpoint, ProtocolError> {
-        let id = self.get_endpoint_id(id);
+    pub async fn register_input_endpoint(&self) -> Result<types::InputEndpoint, ProtocolError> {
+        let id = self.get_endpoint_id();
         let ready_notifier = self
             .control
             .register_ready_notifier(id)
@@ -634,9 +619,8 @@ impl Connection {
 
     pub async fn register_clock_sync_endpoint(
         &self,
-        id: Option<u16>,
     ) -> Result<types::ProtocolEndpoint<ClockSyncServerProtocol>, ProtocolError> {
-        let id = self.get_endpoint_id(id);
+        let id = self.get_endpoint_id();
         let ready_notifier = self
             .control
             .register_ready_notifier(id)
@@ -673,9 +657,8 @@ impl Connection {
 
     pub async fn register_metrics_endpoint(
         &self,
-        id: Option<u16>,
     ) -> Result<types::MetricsServerEndpoint, ProtocolError> {
-        let id = self.get_endpoint_id(id);
+        let id = self.get_endpoint_id();
         let ready_notifier = self
             .control
             .register_ready_notifier(id)
