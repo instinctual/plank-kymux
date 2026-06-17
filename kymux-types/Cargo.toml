@@ -9,3 +9,10 @@ byteorder = "1.4.3"
 bytes = "1.4.0"
 kymux-util = { path = "../kymux-util" }
 thiserror = "1.0.47"
+
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+tokio = { version = "1.36", features = ["rt"] }
+
+[target.'cfg(target_family = "wasm")'.dependencies]
+futures-util = "0.3.30"
+wasm-bindgen-futures = "0.4.37"

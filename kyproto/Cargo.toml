@@ -24,8 +24,6 @@ rmp-serde = "1.1.2"
 serde = { version = "1.0.188", features = ["derive"] }
 thiserror = "1.0.47"
 tokio = { version = "1.32.0", features = ["macros", "sync"] }
-wasm-bindgen = { version = "0.2.87", optional = true }
-wasm-bindgen-futures = { version = "0.4.37", optional = true }
 
 [target.'cfg(not(any(windows, target_family = "wasm")))'.dependencies]
 libc = "0.2.153"
@@ -35,10 +33,5 @@ windows = { version = "0.61.1", features = ["Win32_System_Performance"] }
 
 # https://doc.rust-lang.org/cargo/reference/features.html#optional-dependencies
 [features]
-js = [
-    "kynet/kynet-webtransport-js",
-    "dep:kywasmtime",
-    "dep:wasm-bindgen",
-    "dep:wasm-bindgen-futures",
-]
+js = ["kynet/kynet-webtransport-js", "dep:kywasmtime"]
 tokio-rt = ["tokio/rt"]

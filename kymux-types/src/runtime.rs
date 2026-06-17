@@ -18,13 +18,49 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#[cfg(target_family = "wasm")]
-pub use kywasmtime::{sleep, sleep_until, timeout, timeout_at, Instant, SystemTime, UNIX_EPOCH};
-#[cfg(target_family = "wasm")]
-pub use std::time::Duration;
-#[cfg(not(target_family = "wasm"))]
-pub use std::time::{SystemTime, UNIX_EPOCH};
-#[cfg(not(target_family = "wasm"))]
-pub use tokio::time::{sleep, sleep_until, timeout, timeout_at, Duration, Instant};
+use std::future::Future;
 
-pub use kymux_types::runtime::*;
+#[cfg(target_family = "wasm")]
+use futures_util::future;
+
+#[cfg(not(target_family = "wasm"))]
+pub use tokio::task::JoinHandle;
+
+#[cfg(target_family = "wasm")]
+pub struct JoinHandle<T> {
+    abort_handle: future::AbortHandle,
+    _marker: std::marker::PhantomData<T>,
+}
+
+#[cfg(target_family = "wasm")]
+impl<T> JoinHandle<T> {
+    pub fn abort(&self) {
+        self.abort_handle.abort();
+    }
+}
+
+#[cfg(not(target_family = "wasm"))]
+pub fn spawn<F>(future: F) -> JoinHandle<()>
+where
+    F: Future<Output = ()> + Send + 'static,
+{
+    tokio::spawn(future)
+}
+
+#[cfg(target_family = "wasm")]
+pub fn spawn<F>(future: F) -> JoinHandle<()>
+where
+    F: Future<Output = ()> + 'static,
+{
+    let (abort_handle, abort_registration) = future::AbortHandle::new_pair();
+    let abortable_future = future::Abortable::new(future, abort_registration);
+
+    wasm_bindgen_futures::spawn_local(async {
+        let _ = abortable_future.await;
+    });
+
+    JoinHandle {
+        abort_handle,
+        _marker: std::marker::PhantomData,
+    }
+}
