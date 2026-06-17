@@ -25,10 +25,8 @@ use crate::{KyComAddr, Task};
 use async_trait::async_trait;
 use kymux_types as types;
 use kymux_types::ProtocolError;
-#[allow(unused)]
 use log::{debug, error, info, warn};
 use std::collections::HashMap;
-use std::collections::hash_map::Entry;
 use std::io;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
@@ -36,8 +34,8 @@ use tokio::sync::oneshot;
 
 #[derive(Default)]
 struct EndpointMap {
-    next_id: u16,
-    map: HashMap<u16, oneshot::Sender<io::Result<Connection>>>,
+    next_id: u64,
+    map: HashMap<u64, oneshot::Sender<io::Result<Connection>>>,
 }
 
 struct Guard<'a>(&'a Mutex<Option<EndpointMap>>);
@@ -103,23 +101,10 @@ impl KyCom {
             return Err(io::ErrorKind::ConnectionAborted.into());
         };
 
-        // If all ids are taken, the loop would be infinite
-        assert!(pending_endpoints.map.len() != 1 << 16);
-
         let (tx, rx) = oneshot::channel();
-        let endpoint_id = loop {
-            let endpoint_id = pending_endpoints.next_id;
-            pending_endpoints.next_id = pending_endpoints.next_id.wrapping_add(1);
-
-            // The endpoint id may already be used if `next_id` has wrapped
-            match pending_endpoints.map.entry(endpoint_id) {
-                Entry::Occupied(_) => continue,
-                Entry::Vacant(entry) => {
-                    entry.insert(tx);
-                    break endpoint_id;
-                }
-            }
-        };
+        let endpoint_id = pending_endpoints.next_id;
+        pending_endpoints.next_id += 1;
+        pending_endpoints.map.insert(endpoint_id, tx);
 
         let addr = KyComAddr::new(self.addr, endpoint_id);
         let channel = Channel::new(addr, rx, ChannelRole::Server);
