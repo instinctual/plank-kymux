@@ -32,6 +32,7 @@ pub use metrics::*;
 use async_trait::async_trait;
 use kymux_util::*;
 use thiserror::Error;
+use tokio::sync::mpsc;
 
 #[derive(Debug, Error, Clone)]
 #[error("Protocol error: {0}")]
@@ -73,6 +74,55 @@ impl<T> ProtocolSend<T> {
     pub async fn send(&mut self, packet: T) -> Result<(), ProtocolError> {
         self.driver.send(packet).await
     }
+
+    /// Wraps `self` in a cancel-safe way.
+    ///
+    /// # Errors
+    ///
+    /// Just like a `BufWriter`, errors when sending will be returned on a
+    /// future operation
+    pub fn make_cancel_safe(mut self) -> Self
+    where
+        T: KySend + 'static,
+    {
+        pub struct Sender<T> {
+            tx: mpsc::Sender<T>,
+            errors: mpsc::Receiver<ProtocolError>,
+        }
+
+        #[cfg_attr(target_family = "wasm", async_trait(?Send))]
+        #[cfg_attr(not(target_family = "wasm"), async_trait)]
+        impl<T: KySend> ProtocolSendDriver for Sender<T> {
+            type Packet = T;
+
+            async fn send(&mut self, packet: Self::Packet) -> Result<(), ProtocolError> {
+                // This case is not supposed to happen, but handle it gracefully anyway
+                let disconnected = || ProtocolError::new("send task disconnected");
+
+                tokio::select! {
+                    biased;
+
+                    err = self.errors.recv() => Err(err.unwrap_or_else(disconnected)),
+                    res = self.tx.send(packet) => res.map_err(|_| disconnected()),
+                }
+            }
+        }
+
+        let (tx, mut rx) = mpsc::channel(1);
+        let (errors_tx, errors) = mpsc::channel(1);
+
+        runtime::spawn(async move {
+            while let Some(packet) = rx.recv().await {
+                if let Err(err) = self.send(packet).await {
+                    if errors_tx.send(err).await.is_err() {
+                        break;
+                    }
+                }
+            }
+        });
+
+        Self::new(Sender { tx, errors })
+    }
 }
 
 pub struct ProtocolRecv<T> {
@@ -88,6 +138,38 @@ impl<T> ProtocolRecv<T> {
 
     pub async fn recv(&mut self) -> Result<Option<T>, ProtocolError> {
         self.driver.recv().await
+    }
+
+    /// Wraps `self` in a cancel-safe way.
+    pub fn make_cancel_safe(mut self) -> Self
+    where
+        T: KySend + 'static,
+    {
+        pub struct Receiver<T> {
+            rx: mpsc::Receiver<Result<T, ProtocolError>>,
+        }
+
+        #[cfg_attr(target_family = "wasm", async_trait(?Send))]
+        #[cfg_attr(not(target_family = "wasm"), async_trait)]
+        impl<T: KySend> ProtocolRecvDriver for Receiver<T> {
+            type Packet = T;
+
+            async fn recv(&mut self) -> Result<Option<Self::Packet>, ProtocolError> {
+                self.rx.recv().await.transpose()
+            }
+        }
+
+        let (tx, rx) = mpsc::channel(1);
+
+        runtime::spawn(async move {
+            while let Some(packet) = self.recv().await.transpose() {
+                if tx.send(packet).await.is_err() {
+                    break;
+                }
+            }
+        });
+
+        Self::new(Receiver { rx })
     }
 }
 
