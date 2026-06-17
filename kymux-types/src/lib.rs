@@ -181,8 +181,6 @@ impl<T> ProtocolRecv<T> {
 pub trait ProtocolEndpointDriver: kymux_util::KySend {
     type Protocol;
 
-    fn id(&self) -> u16;
-
     // object-safe
     async fn ready_boxed(self: Box<Self>) -> Result<Self::Protocol, ProtocolError>;
 
@@ -204,10 +202,6 @@ impl<T> ProtocolEndpoint<T> {
         Self {
             driver: Box::new(driver),
         }
-    }
-
-    pub fn id(&self) -> u16 {
-        self.driver.id()
     }
 
     pub async fn ready(self) -> Result<T, ProtocolError> {

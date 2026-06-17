@@ -53,7 +53,6 @@ pub mod runtime;
 mod task;
 
 struct VideoServerEndpointDriver {
-    id: u16,
     ready_notifier: ReadyNotifier,
     ky_channel: KyChannel,
     video_protocol: VideoProtocol,
@@ -64,10 +63,6 @@ struct VideoServerEndpointDriver {
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
 impl types::ProtocolEndpointDriver for VideoServerEndpointDriver {
     type Protocol = types::VideoServerProtocol;
-
-    fn id(&self) -> u16 {
-        self.id
-    }
 
     async fn ready_boxed(self: Box<Self>) -> Result<Self::Protocol, ProtocolError> {
         self.ready_notifier
@@ -85,7 +80,6 @@ impl types::ProtocolEndpointDriver for VideoServerEndpointDriver {
 }
 
 struct VideoClientEndpointDriver {
-    id: u16,
     ready_notifier: ReadyNotifier,
     ky_channel: KyChannel,
     video_protocol: VideoProtocol,
@@ -96,10 +90,6 @@ struct VideoClientEndpointDriver {
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
 impl types::ProtocolEndpointDriver for VideoClientEndpointDriver {
     type Protocol = types::VideoClientProtocol;
-
-    fn id(&self) -> u16 {
-        self.id
-    }
 
     async fn ready_boxed(self: Box<Self>) -> Result<Self::Protocol, ProtocolError> {
         self.ready_notifier
@@ -117,7 +107,6 @@ impl types::ProtocolEndpointDriver for VideoClientEndpointDriver {
 }
 
 struct AudioServerEndpointDriver {
-    id: u16,
     ready_notifier: ReadyNotifier,
     ky_channel: KyChannel,
     audio_protocol: AudioProtocol,
@@ -128,10 +117,6 @@ struct AudioServerEndpointDriver {
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
 impl types::ProtocolEndpointDriver for AudioServerEndpointDriver {
     type Protocol = types::AudioServerProtocol;
-
-    fn id(&self) -> u16 {
-        self.id
-    }
 
     async fn ready_boxed(self: Box<Self>) -> Result<Self::Protocol, ProtocolError> {
         self.ready_notifier
@@ -149,7 +134,6 @@ impl types::ProtocolEndpointDriver for AudioServerEndpointDriver {
 }
 
 struct AudioClientEndpointDriver {
-    id: u16,
     ready_notifier: ReadyNotifier,
     ky_channel: KyChannel,
     audio_protocol: AudioProtocol,
@@ -160,10 +144,6 @@ struct AudioClientEndpointDriver {
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
 impl types::ProtocolEndpointDriver for AudioClientEndpointDriver {
     type Protocol = types::AudioClientProtocol;
-
-    fn id(&self) -> u16 {
-        self.id
-    }
 
     async fn ready_boxed(self: Box<Self>) -> Result<Self::Protocol, ProtocolError> {
         self.ready_notifier
@@ -181,7 +161,6 @@ impl types::ProtocolEndpointDriver for AudioClientEndpointDriver {
 }
 
 struct DataEndpointDriver {
-    id: u16,
     ready_notifier: ReadyNotifier,
     ky_channel: KyChannel,
 }
@@ -190,10 +169,6 @@ struct DataEndpointDriver {
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
 impl types::ProtocolEndpointDriver for DataEndpointDriver {
     type Protocol = types::DataProtocol;
-
-    fn id(&self) -> u16 {
-        self.id
-    }
 
     async fn ready_boxed(self: Box<Self>) -> Result<Self::Protocol, ProtocolError> {
         self.ready_notifier
@@ -206,7 +181,6 @@ impl types::ProtocolEndpointDriver for DataEndpointDriver {
 }
 
 struct InputEndpointDriver {
-    id: u16,
     ready_notifier: ReadyNotifier,
     ky_channel: KyChannel,
 }
@@ -215,10 +189,6 @@ struct InputEndpointDriver {
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
 impl types::ProtocolEndpointDriver for InputEndpointDriver {
     type Protocol = types::InputProtocol;
-
-    fn id(&self) -> u16 {
-        self.id
-    }
 
     async fn ready_boxed(self: Box<Self>) -> Result<Self::Protocol, ProtocolError> {
         self.ready_notifier
@@ -231,7 +201,6 @@ impl types::ProtocolEndpointDriver for InputEndpointDriver {
 }
 
 struct ClockSyncServerEndpointDriver {
-    id: u16,
     ready_notifier: ReadyNotifier,
     ky_channel: KyChannel,
 }
@@ -240,10 +209,6 @@ struct ClockSyncServerEndpointDriver {
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
 impl types::ProtocolEndpointDriver for ClockSyncServerEndpointDriver {
     type Protocol = ClockSyncServerProtocol;
-
-    fn id(&self) -> u16 {
-        self.id
-    }
 
     async fn ready_boxed(self: Box<Self>) -> Result<Self::Protocol, ProtocolError> {
         self.ready_notifier
@@ -255,7 +220,6 @@ impl types::ProtocolEndpointDriver for ClockSyncServerEndpointDriver {
 }
 
 struct ClockSyncClientEndpointDriver {
-    id: u16,
     ready_notifier: ReadyNotifier,
     ky_channel: KyChannel,
 }
@@ -264,10 +228,6 @@ struct ClockSyncClientEndpointDriver {
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
 impl types::ProtocolEndpointDriver for ClockSyncClientEndpointDriver {
     type Protocol = ClockSyncClientProtocol;
-
-    fn id(&self) -> u16 {
-        self.id
-    }
 
     async fn ready_boxed(self: Box<Self>) -> Result<Self::Protocol, ProtocolError> {
         self.ready_notifier
@@ -279,7 +239,6 @@ impl types::ProtocolEndpointDriver for ClockSyncClientEndpointDriver {
 }
 
 struct MetricsServerEndpointDriver {
-    id: u16,
     ready_notifier: ReadyNotifier,
     ky_channel: KyChannel,
 }
@@ -288,10 +247,6 @@ struct MetricsServerEndpointDriver {
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
 impl types::ProtocolEndpointDriver for MetricsServerEndpointDriver {
     type Protocol = types::MetricsServerProtocol;
-
-    fn id(&self) -> u16 {
-        self.id
-    }
 
     async fn ready_boxed(self: Box<Self>) -> Result<Self::Protocol, ProtocolError> {
         self.ready_notifier
@@ -304,7 +259,6 @@ impl types::ProtocolEndpointDriver for MetricsServerEndpointDriver {
 }
 
 struct MetricsClientEndpointDriver {
-    id: u16,
     ready_notifier: ReadyNotifier,
     ky_channel: KyChannel,
 }
@@ -313,10 +267,6 @@ struct MetricsClientEndpointDriver {
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
 impl types::ProtocolEndpointDriver for MetricsClientEndpointDriver {
     type Protocol = types::MetricsClientProtocol;
-
-    fn id(&self) -> u16 {
-        self.id
-    }
 
     async fn ready_boxed(self: Box<Self>) -> Result<Self::Protocol, ProtocolError> {
         self.ready_notifier
@@ -482,7 +432,6 @@ impl Connection {
         let ky_channel = self.router.register(id).map_err(ProtocolError::new)?;
         let protocol_stats = self.protocol_stats.clone();
         let driver = VideoServerEndpointDriver {
-            id,
             ready_notifier,
             ky_channel,
             video_protocol,
@@ -503,7 +452,6 @@ impl Connection {
         let ky_channel = self.router.register(id).map_err(ProtocolError::new)?;
         let protocol_stats = self.protocol_stats.clone();
         let driver = VideoClientEndpointDriver {
-            id,
             ready_notifier,
             ky_channel,
             video_protocol,
@@ -528,7 +476,6 @@ impl Connection {
         let ky_channel = self.router.register(id).map_err(ProtocolError::new)?;
         let protocol_stats = self.protocol_stats.clone();
         let driver = AudioServerEndpointDriver {
-            id,
             ready_notifier,
             ky_channel,
             audio_protocol,
@@ -549,7 +496,6 @@ impl Connection {
         let ky_channel = self.router.register(id).map_err(ProtocolError::new)?;
         let protocol_stats = self.protocol_stats.clone();
         let driver = AudioClientEndpointDriver {
-            id,
             ready_notifier,
             ky_channel,
             audio_protocol,
@@ -572,7 +518,6 @@ impl Connection {
             .map_err(ProtocolError::new)?;
         let ky_channel = self.router.register(id).map_err(ProtocolError::new)?;
         let driver = DataEndpointDriver {
-            id,
             ready_notifier,
             ky_channel,
         };
@@ -586,7 +531,6 @@ impl Connection {
             .map_err(ProtocolError::new)?;
         let ky_channel = self.router.register(id).map_err(ProtocolError::new)?;
         let driver = DataEndpointDriver {
-            id,
             ready_notifier,
             ky_channel,
         };
@@ -607,7 +551,6 @@ impl Connection {
             .map_err(ProtocolError::new)?;
         let ky_channel = self.router.register(id).map_err(ProtocolError::new)?;
         let driver = InputEndpointDriver {
-            id,
             ready_notifier,
             ky_channel,
         };
@@ -621,7 +564,6 @@ impl Connection {
             .map_err(ProtocolError::new)?;
         let ky_channel = self.router.register(id).map_err(ProtocolError::new)?;
         let driver = InputEndpointDriver {
-            id,
             ready_notifier,
             ky_channel,
         };
@@ -642,7 +584,6 @@ impl Connection {
             .map_err(ProtocolError::new)?;
         let ky_channel = self.router.register(id).map_err(ProtocolError::new)?;
         let driver = ClockSyncServerEndpointDriver {
-            id,
             ready_notifier,
             ky_channel,
         };
@@ -659,7 +600,6 @@ impl Connection {
             .map_err(ProtocolError::new)?;
         let ky_channel = self.router.register(id).map_err(ProtocolError::new)?;
         let driver = ClockSyncClientEndpointDriver {
-            id,
             ready_notifier,
             ky_channel,
         };
@@ -680,7 +620,6 @@ impl Connection {
             .map_err(ProtocolError::new)?;
         let ky_channel = self.router.register(id).map_err(ProtocolError::new)?;
         let driver = MetricsServerEndpointDriver {
-            id,
             ready_notifier,
             ky_channel,
         };
@@ -697,7 +636,6 @@ impl Connection {
             .map_err(ProtocolError::new)?;
         let ky_channel = self.router.register(id).map_err(ProtocolError::new)?;
         let driver = MetricsClientEndpointDriver {
-            id,
             ready_notifier,
             ky_channel,
         };
