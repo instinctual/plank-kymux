@@ -32,7 +32,7 @@ use kymux_types as types;
 use kymux_util::*;
 
 pub use auth::{ClientAuth, UnauthenticatedConnection};
-pub use kymux_types::{ProtocolEndpoint, ProtocolError};
+pub use kymux_types::ProtocolError;
 pub use kymux_util::DecodeHexError;
 pub use protocol::clock_sync::{
     ClockSyncClientEndpoint, ClockSyncClientProtocol, ClockSyncServerEndpoint,
@@ -327,7 +327,7 @@ impl types::ProtocolEndpointDriver for MetricsClientEndpointDriver {
         Ok(Self::Protocol { recv })
     }
 }
-///
+
 /// Stats filled by protocol implementations
 #[derive(Debug, Clone, Default)]
 pub struct ProtocolStats {
@@ -469,7 +469,7 @@ impl Connection {
     pub async fn register_video_endpoint(
         &self,
         video_protocol: VideoProtocol,
-    ) -> Result<types::VideoServerEndpoint, ProtocolError> {
+    ) -> Result<(u16, types::VideoServerEndpoint), ProtocolError> {
         let id = self.get_endpoint_id();
         let ready_notifier = self
             .control
@@ -488,7 +488,7 @@ impl Connection {
             video_protocol,
             protocol_stats,
         };
-        Ok(driver.into())
+        Ok((id, types::ProtocolEndpoint::new(driver)))
     }
 
     pub fn connect_video_endpoint(
@@ -515,7 +515,7 @@ impl Connection {
     pub async fn register_audio_endpoint(
         &self,
         audio_protocol: AudioProtocol,
-    ) -> Result<types::AudioServerEndpoint, ProtocolError> {
+    ) -> Result<(u16, types::AudioServerEndpoint), ProtocolError> {
         let id = self.get_endpoint_id();
         let ready_notifier = self
             .control
@@ -534,7 +534,7 @@ impl Connection {
             audio_protocol,
             protocol_stats,
         };
-        Ok(driver.into())
+        Ok((id, types::ProtocolEndpoint::new(driver)))
     }
 
     pub fn connect_audio_endpoint(
@@ -558,7 +558,9 @@ impl Connection {
         Ok(driver.into())
     }
 
-    pub async fn register_data_endpoint(&self) -> Result<types::DataEndpoint, ProtocolError> {
+    pub async fn register_data_endpoint(
+        &self,
+    ) -> Result<(u16, types::DataEndpoint), ProtocolError> {
         let id = self.get_endpoint_id();
         let ready_notifier = self
             .control
@@ -574,7 +576,7 @@ impl Connection {
             ready_notifier,
             ky_channel,
         };
-        Ok(driver.into())
+        Ok((id, types::ProtocolEndpoint::new(driver)))
     }
 
     pub fn connect_data_endpoint(&self, id: u16) -> Result<types::DataEndpoint, ProtocolError> {
@@ -591,7 +593,9 @@ impl Connection {
         Ok(driver.into())
     }
 
-    pub async fn register_input_endpoint(&self) -> Result<types::InputEndpoint, ProtocolError> {
+    pub async fn register_input_endpoint(
+        &self,
+    ) -> Result<(u16, types::InputEndpoint), ProtocolError> {
         let id = self.get_endpoint_id();
         let ready_notifier = self
             .control
@@ -607,7 +611,7 @@ impl Connection {
             ready_notifier,
             ky_channel,
         };
-        Ok(driver.into())
+        Ok((id, types::ProtocolEndpoint::new(driver)))
     }
 
     pub fn connect_input_endpoint(&self, id: u16) -> Result<types::InputEndpoint, ProtocolError> {
@@ -626,7 +630,7 @@ impl Connection {
 
     pub async fn register_clock_sync_endpoint(
         &self,
-    ) -> Result<types::ProtocolEndpoint<ClockSyncServerProtocol>, ProtocolError> {
+    ) -> Result<(u16, types::ProtocolEndpoint<ClockSyncServerProtocol>), ProtocolError> {
         let id = self.get_endpoint_id();
         let ready_notifier = self
             .control
@@ -642,7 +646,7 @@ impl Connection {
             ready_notifier,
             ky_channel,
         };
-        Ok(driver.into())
+        Ok((id, types::ProtocolEndpoint::new(driver)))
     }
 
     pub fn connect_clock_sync_endpoint(
@@ -664,7 +668,7 @@ impl Connection {
 
     pub async fn register_metrics_endpoint(
         &self,
-    ) -> Result<types::MetricsServerEndpoint, ProtocolError> {
+    ) -> Result<(u16, types::MetricsServerEndpoint), ProtocolError> {
         let id = self.get_endpoint_id();
         let ready_notifier = self
             .control
@@ -680,7 +684,7 @@ impl Connection {
             ready_notifier,
             ky_channel,
         };
-        Ok(driver.into())
+        Ok((id, types::ProtocolEndpoint::new(driver)))
     }
 
     pub fn connect_metrics_endpoint(
