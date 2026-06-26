@@ -16,8 +16,6 @@ bytes = "1.4.0"
 kymux-types = { path = "../kymux-types" }
 kynet = { path = "../kynet" }
 kymux-util = { path = "../kymux-util" }
-kywasmtime = { git = "https://github.com/rom1v/kywasmtime.git", tag = "0.1", optional = true }
-rustls = { version = "0.23.31", optional = true, default-features = false, features = ["logging", "std", "tls12"] }
 log = "0.4.20"
 raptorq = "1.7.0"
 rmp-serde = "1.1.2"
@@ -31,7 +29,13 @@ libc = "0.2.153"
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.62", features = ["Win32_System_Performance"] }
 
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+rustls = { version = "0.23.31", optional = true, default-features = false, features = ["logging", "std", "tls12"] }
+tokio = { version = "1.32.0", features = ["rt", "time"] }
+
+[target.'cfg(target_family = "wasm")'.dependencies]
+kynet = { path = "../kynet", features = ["kynet-webtransport-js"] }
+kywasmtime = { git = "https://github.com/rom1v/kywasmtime.git", tag = "0.1" }
+
 # https://doc.rust-lang.org/cargo/reference/features.html#optional-dependencies
 [features]
-js = ["kynet/kynet-webtransport-js", "dep:kywasmtime"]
-tokio-rt = ["tokio/rt"]

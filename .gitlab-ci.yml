@@ -4,8 +4,8 @@ variables:
   WASM_IMAGE: ${CI_REGISTRY}/${ROOT_NAMESPACE}/ops/docker-images/debian-wasm:1708fd23b028cc9369b568f9ff976a84f7c869c2
   WIN64_IMAGE: ${CI_REGISTRY}/${ROOT_NAMESPACE}/ops/docker-images/debian-win64:1708fd23b028cc9369b568f9ff976a84f7c869c2
   MACOS_RUST_VERSION: 1.89.0
-  DESKTOP_FEATURES: server,backend-quinn,backend-wtransport,tokio-rt,ipc
-  WEB_FEATURES: backend-webtransport-js,js
+  DESKTOP_FEATURES: backend-quinn,backend-wtransport,ipc
+  WEB_FEATURES: backend-webtransport-js
 
 stages:
   - lint

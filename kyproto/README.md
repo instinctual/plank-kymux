@@ -18,12 +18,8 @@ Audio and input packets are only transmitted over a reliable stream for now.
 [GoP]: https://en.wikipedia.org/wiki/Group_of_pictures
 [FEC]: https://en.wikipedia.org/wiki/Error_correction_code
 
-Cargo features exposes 2 runtimes:
- - `tokio-rt` (for desktop)
- - `js` (for browsers)
-
-and forward the 3 kynet features, depending on the underlying network transport
-protocol:
+Cargo features forward the 3 kynet features, depending on the underlying network
+transport protocol:
  - `kynet-quinn`
  - `kynet-webtransport-js`
  - `kynet-wtransport`
@@ -35,14 +31,14 @@ To build the project locally:
 
 ```bash
 # quinn (non-wasm-only)
-cargo build --features=tokio-rt,kynet-quinn
+cargo build --features=kynet-quinn
 
 # webtransport-js (wasm-only)
 export RUSTFLAGS=--cfg=web_sys_unstable_apis
-cargo build --features=js --target=wasm32-unknown-unknown
+cargo build --features=kynet-webtransport-js --target=wasm32-unknown-unknown
 
 # wtransport (non-wasm-only)
-cargo build --features=tokio-rt,kynet-wtransport
+cargo build --features=kynet-wtransport
 ```
 
 To use _kyproto_ as a dependency (adapt the features), add to your `Cargo.toml`:
@@ -50,7 +46,7 @@ To use _kyproto_ as a dependency (adapt the features), add to your `Cargo.toml`:
 ```toml
 [dependencies]
 kynet = { version = "0.1", path = "../kynet", features = ["kynet-webtransport-js"] }
-kyproto = { version = "0.1", path = "../kyproto", features = ["js"] }
+kyproto = { version = "0.1", path = "../kyproto" }
 ```
 
 ## Use

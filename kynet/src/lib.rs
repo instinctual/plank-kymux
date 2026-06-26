@@ -66,10 +66,7 @@ pub mod common {
 
 pub use crate::driver::Server;
 
-#[cfg(all(
-    any(feature = "kynet-quinn", feature = "kynet-wtransport"),
-    not(target_family = "wasm")
-))]
+#[cfg(any(feature = "kynet-quinn", feature = "kynet-wtransport"))]
 pub mod cert;
 
 mod driver;
@@ -191,21 +188,10 @@ pub struct ConnectionStats {
 
 #[derive(Debug)]
 pub struct SendStream {
-    #[cfg(not(target_family = "wasm"))]
-    driver: Box<dyn SendStreamDriver + Sync + Send>,
-    #[cfg(target_family = "wasm")]
     driver: Box<dyn SendStreamDriver>,
 }
 
 impl SendStream {
-    #[cfg(not(target_family = "wasm"))]
-    pub fn new<T: SendStreamDriver + Sync + Send + 'static>(driver: T) -> Self {
-        Self {
-            driver: Box::new(driver),
-        }
-    }
-
-    #[cfg(target_family = "wasm")]
     pub fn new<T: SendStreamDriver + 'static>(driver: T) -> Self {
         Self {
             driver: Box::new(driver),
@@ -245,21 +231,10 @@ impl AsyncWrite for SendStream {
 
 #[derive(Debug)]
 pub struct RecvStream {
-    #[cfg(not(target_family = "wasm"))]
-    driver: Box<dyn RecvStreamDriver + Sync + Send>,
-    #[cfg(target_family = "wasm")]
     driver: Box<dyn RecvStreamDriver>,
 }
 
 impl RecvStream {
-    #[cfg(not(target_family = "wasm"))]
-    pub fn new<T: RecvStreamDriver + Sync + Send + 'static>(driver: T) -> Self {
-        Self {
-            driver: Box::new(driver),
-        }
-    }
-
-    #[cfg(target_family = "wasm")]
     pub fn new<T: RecvStreamDriver + 'static>(driver: T) -> Self {
         Self {
             driver: Box::new(driver),

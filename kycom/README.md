@@ -10,12 +10,11 @@ directly via the kyproto API.
 [kynet]: ../kynet/README.md
 [kyproto]: ../kyproto/README.md
 
-Cargo features forward 2 of the 3 kynet features, depending on the underlying
-network transport protocol:
+Cargo features forward the kynet features, depending on the underlying network
+transport protocol:
  - `kynet-quinn`
  - `kynet-wtransport`
-
-(`kynet-webtransport-js` is not exposed because it only supports WASM)
+ - `kynet-webtransport-js` (only supports WASM)
 
 
 ## Build
@@ -33,7 +32,7 @@ To use _kycom_ as a dependency (adapt the features), add to your `Cargo.toml`:
 ```toml
 kycom = { version = "0.1", path = "../kyproto/kycom", features = ["kynet-wtransport"] }
 kynet = { version = "0.1", path = "../kyproto/kynet", features = ["kynet-wtransport"] }
-kyproto = { version = "0.1", path = "../kyproto/kyproto", features = ["tokio-rt", "kynet-wtransport"] }
+kyproto = { version = "0.1", path = "../kyproto/kyproto", features = ["kynet-wtransport"] }
 ```
 
 ## Use

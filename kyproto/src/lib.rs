@@ -18,9 +18,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#[cfg(all(not(feature = "js"), not(feature = "tokio-rt")))]
-compile_error!("No feature selected, pass either --features=js or --features=tokio-rt");
-
 use std::sync::atomic::{AtomicU16, Ordering};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 

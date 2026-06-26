@@ -20,11 +20,10 @@
 
 #[cfg(target_family = "wasm")]
 pub use kywasmtime::{Instant, SystemTime, UNIX_EPOCH, sleep, sleep_until, timeout, timeout_at};
-#[cfg(target_family = "wasm")]
 pub use std::time::Duration;
 #[cfg(not(target_family = "wasm"))]
 pub use std::time::{SystemTime, UNIX_EPOCH};
 #[cfg(not(target_family = "wasm"))]
-pub use tokio::time::{Duration, Instant, sleep, sleep_until, timeout, timeout_at};
+pub use tokio::time::{Instant, sleep, sleep_until, timeout, timeout_at};
 
 pub use kymux_types::runtime::*;
