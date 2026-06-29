@@ -29,7 +29,6 @@ use log::{debug, error, info, warn};
 pub mod connection;
 mod endpoint;
 pub mod ipc;
-pub mod serial;
 mod server;
 
 pub use endpoint::Channel;

@@ -18,8 +18,15 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+use crate::serial::{Deserializer, Serializer};
+
+use kymux_util::{KyAsyncRead, KyAsyncWrite};
+
+use async_trait::async_trait;
 use byteorder::{BigEndian, ByteOrder};
-use bytes::Bytes;
+use bytes::{Bytes, BytesMut};
+use std::io::{ErrorKind, Result};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 #[derive(Debug, Clone)]
 pub enum AVPacket {
@@ -190,5 +197,76 @@ impl AVPacketHeader {
         } else {
             Self::Codec(CodecPacketHeader::deserialize(buf))
         }
+    }
+}
+
+pub struct AVPacketSerializer;
+pub struct AVPacketDeserializer;
+
+#[cfg_attr(target_family = "wasm", async_trait(?Send))]
+#[cfg_attr(not(target_family = "wasm"), async_trait)]
+impl Serializer for AVPacketSerializer {
+    type Packet = AVPacket;
+
+    async fn write(
+        &mut self,
+        packet: Self::Packet,
+        writer: &mut (dyn KyAsyncWrite + Unpin),
+    ) -> Result<()> {
+        match packet {
+            AVPacket::Codec(packet) => {
+                let header = packet.header.serialize();
+                writer.write_all(&header).await?;
+            }
+            AVPacket::Media(packet) => {
+                let header = packet.header.serialize();
+                writer.write_all(&header).await?;
+                writer.write_all(&packet.payload).await?;
+            }
+            AVPacket::Hole(packet) => {
+                let header = packet.header.serialize();
+                writer.write_all(&header).await?;
+            }
+        }
+
+        Ok(())
+    }
+}
+
+#[cfg_attr(target_family = "wasm", async_trait(?Send))]
+#[cfg_attr(not(target_family = "wasm"), async_trait)]
+impl Deserializer for AVPacketDeserializer {
+    type Packet = AVPacket;
+
+    async fn read(
+        &mut self,
+        reader: &mut (dyn KyAsyncRead + Unpin),
+    ) -> Result<Option<Self::Packet>> {
+        let mut header = [0; AVPacketHeader::SERIALIZED_SIZE];
+        if let Err(err) = reader.read_exact(&mut header).await {
+            if err.kind() == ErrorKind::UnexpectedEof {
+                return Ok(None); // EOF
+            } else {
+                return Err(err);
+            }
+        }
+
+        let header = AVPacketHeader::deserialize(&header);
+        let packet = match header {
+            AVPacketHeader::Media(header) => {
+                let mut buf = BytesMut::zeroed(header.size as usize);
+
+                reader.read_exact(&mut buf).await?;
+
+                AVPacket::Media(MediaPacket {
+                    header,
+                    payload: buf.freeze(),
+                })
+            }
+            AVPacketHeader::Codec(header) => AVPacket::Codec(CodecPacket { header }),
+            AVPacketHeader::Hole(header) => AVPacket::Hole(HolePacket { header }),
+        };
+
+        Ok(Some(packet))
     }
 }

@@ -23,11 +23,13 @@ pub mod data;
 pub mod input;
 pub mod metrics;
 pub mod runtime;
+pub mod serial;
 
 pub use av::*;
 pub use data::*;
 pub use input::*;
 pub use metrics::*;
+pub use serial::*;
 
 use async_trait::async_trait;
 use kymux_util::*;
