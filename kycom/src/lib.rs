@@ -51,11 +51,11 @@ impl Drop for Task {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct KyComAddr {
     pub addr: SocketAddr,
-    pub endpoint_id: u64,
+    pub endpoint_id: u16,
 }
 
 impl KyComAddr {
-    pub fn new(addr: SocketAddr, endpoint_id: u64) -> Self {
+    pub fn new(addr: SocketAddr, endpoint_id: u16) -> Self {
         Self { addr, endpoint_id }
     }
 
@@ -97,7 +97,7 @@ impl KyComAddr {
             return Err(invalid_data("Expected a single endpoint id"));
         };
 
-        let endpoint_id = u64::from_str_radix(endpoint, 16)
+        let endpoint_id = u16::from_str_radix(endpoint, 16)
             .map_err(|e| invalid_data(format!("Invalid endpoint ID (hex): {e}")))?;
 
         Ok(Self { addr, endpoint_id })
@@ -120,7 +120,7 @@ mod tests {
     #[test]
     fn parse_ipv4() {
         let port: u16 = 4343;
-        let endpoint_id: u64 = 0x0123;
+        let endpoint_id: u16 = 0x0123;
 
         let uri = format!("kymux://127.0.0.1:{port}/{endpoint_id:X}");
         let addr = KyComAddr::parse(&uri).unwrap();
@@ -133,7 +133,7 @@ mod tests {
     #[test]
     fn parse_ipv6() {
         let port: u16 = 4343;
-        let endpoint_id: u64 = 0x0123;
+        let endpoint_id: u16 = 0x0123;
 
         let uri = format!("kymux://[::1]:{port}/{endpoint_id:X}");
         let addr = KyComAddr::parse(&uri).unwrap();

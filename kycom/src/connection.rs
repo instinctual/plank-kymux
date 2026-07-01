@@ -93,7 +93,7 @@ impl AsyncRead for Connection {
 
 pub(crate) struct Server {
     pub addr: SocketAddr,
-    rx: mpsc::Receiver<(TcpStream, u64)>,
+    rx: mpsc::Receiver<(TcpStream, u16)>,
     _listen_task: Task,
 }
 
@@ -149,7 +149,7 @@ impl Server {
 
     async fn listen(
         listener: TcpListener,
-        tx: mpsc::Sender<(TcpStream, u64)>,
+        tx: mpsc::Sender<(TcpStream, u16)>,
     ) -> std::io::Result<()> {
         loop {
             let (tcp_stream, _) = listener.accept().await?;
@@ -164,9 +164,9 @@ impl Server {
 
     async fn handle_stream(
         mut tcp_stream: TcpStream,
-        tx: mpsc::Sender<(TcpStream, u64)>,
+        tx: mpsc::Sender<(TcpStream, u16)>,
     ) -> std::io::Result<()> {
-        let endpoint_id = tcp_stream.read_u64().await?;
+        let endpoint_id = tcp_stream.read_u16().await?;
         info!("TCP connection for endpoint {endpoint_id:X}");
 
         // Ignore error (if the receiver is dropped)
