@@ -33,6 +33,7 @@ use std::io;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use tokio::sync::oneshot;
+use tokio::task::JoinSet;
 
 #[derive(Default)]
 struct EndpointMap {
@@ -59,7 +60,7 @@ pub struct KyCom {
     // Some() initially, then None once accept() fails
     pending_endpoints: Arc<Mutex<Option<EndpointMap>>>,
     _listen_task: Task,
-    tasks: Vec<Task>,
+    forward_join_set: JoinSet<()>,
 }
 
 impl KyCom {
@@ -78,7 +79,7 @@ impl KyCom {
             addr,
             pending_endpoints,
             _listen_task,
-            tasks: Vec::new(),
+            forward_join_set: Default::default(),
         }
     }
 
@@ -131,23 +132,18 @@ impl KyCom {
         P: 'static,
         ChannelForwarder<P>: Forwarder,
     {
-        // Clean up finished tasks
-        self.tasks.retain(|task| !task.0.is_finished());
-
         let forwarder_name = std::any::type_name::<P>()
             .rsplit("::")
             .next()
             .unwrap_or("Unknown");
         debug!("Spawning {forwarder_name} forwarder");
 
-        let task = Task::spawn(async move {
+        self.forward_join_set.spawn(async move {
             let forwarder = ChannelForwarder { channel, endpoint };
             if let Err(err) = forwarder.forward().await {
                 info!("{forwarder_name} forwarder ended with result {err:?}");
             }
         });
-
-        self.tasks.push(task);
     }
 
     pub fn register_and_forward<T: 'static>(
