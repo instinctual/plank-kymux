@@ -9,4 +9,5 @@ members = [
     "kymux-util",
     "kynet",
     "kyproto",
+    "kywebsocket",
 ]

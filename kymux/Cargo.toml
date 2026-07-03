@@ -8,6 +8,7 @@ kycom = { path = "../kycom", optional = true }
 kymux-types = { path = "../kymux-types" }
 kynet = { path = "../kynet" }
 kyproto = { path = "../kyproto" }
+kywebsocket = { path = "../kywebsocket" }
 
 [features]
 ipc = ["dep:kycom"]
@@ -15,3 +16,5 @@ ipc = ["dep:kycom"]
 backend-quinn = ["kynet/kynet-quinn"]
 backend-wtransport = ["kynet/kynet-wtransport"]
 backend-webtransport-js = ["kynet/kynet-webtransport-js"]
+backend-websocket-js = ["kywebsocket/kywebsocket-js"]
+backend-actix-ws = ["kywebsocket/kywebsocket-actix-ws"]
