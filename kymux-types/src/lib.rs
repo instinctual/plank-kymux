@@ -176,6 +176,28 @@ impl<T> ProtocolRecv<T> {
     }
 }
 
+pub async fn forward<T>(
+    mut recv: ProtocolRecv<T>,
+    mut send: ProtocolSend<T>,
+) -> Result<(), ProtocolError> {
+    while let Some(packet) = recv.recv().await? {
+        send.send(packet).await?;
+    }
+    Ok(())
+}
+
+pub async fn forward_bi<T, U>(
+    a_send: ProtocolSend<U>,
+    a_recv: ProtocolRecv<T>,
+    b_send: ProtocolSend<T>,
+    b_recv: ProtocolRecv<U>,
+) -> Result<(), ProtocolError> {
+    tokio::select! {
+        res = forward(b_recv, a_send) => res,
+        res = forward(a_recv, b_send) => res,
+    }
+}
+
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
 pub trait ProtocolEndpointDriver: kymux_util::KySend {
