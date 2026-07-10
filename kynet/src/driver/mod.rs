@@ -90,7 +90,7 @@ pub trait RecvStreamDriver: Debug + tokio::io::AsyncRead + Unpin + KySend + KySy
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
 pub trait Server: KySend + KySync {
-    async fn accept(&self) -> Result<Connection, ConnectionError>;
+    async fn accept(&self) -> Result<Option<Connection>, ConnectionError>;
 
     fn close(&self, error_code: u32, reason: &str);
 

@@ -128,12 +128,10 @@ impl CommonServer {
 
 #[async_trait]
 impl super::Server for CommonServer {
-    async fn accept(&self) -> Result<Connection, ConnectionError> {
-        let quinn_incoming = self
-            .quinn_endpoint
-            .accept()
-            .await
-            .ok_or_else(|| ConnectionError("Endpoint closed".to_string()))?;
+    async fn accept(&self) -> Result<Option<Connection>, ConnectionError> {
+        let Some(quinn_incoming) = self.quinn_endpoint.accept().await else {
+            return Ok(None);
+        };
 
         #[allow(unused_mut)]
         let mut quinn_connecting = quinn_incoming
@@ -166,7 +164,7 @@ impl super::Server for CommonServer {
                     ConnectionError(format!("WebTransport session accept failed: {:?}", e))
                 })?;
 
-                return Ok(Connection::from(wt_conn));
+                return Ok(Some(Connection::from(wt_conn)));
             }
         }
 
@@ -174,7 +172,7 @@ impl super::Server for CommonServer {
         let quinn_connection = quinn_connecting
             .await
             .map_err(|e| ConnectionError(format!("Connection failed: {:?}", e)))?;
-        Ok(quinn_connection.into())
+        Ok(Some(quinn_connection.into()))
     }
 
     fn close(&self, error_code: u32, reason: &str) {
