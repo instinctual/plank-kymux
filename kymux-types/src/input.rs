@@ -21,7 +21,7 @@
 use kymux_util::{KyAsyncRead, KyAsyncWrite};
 
 use bytes::{Bytes, BytesMut};
-use std::io::{ErrorKind, Result};
+use std::io::{self, ErrorKind, Result};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 #[derive(Debug, Clone)]
@@ -65,4 +65,26 @@ impl super::Serializable for InputPacket {
     }
 }
 
-impl super::AutoFramedSerializable for InputPacket {}
+impl super::FramedSerializable for InputPacket {
+    fn serialize(&self) -> Vec<u8> {
+        // Contrary to the Serializable implementation, the size field is not
+        // needed
+        let mut data = Vec::with_capacity(self.payload.len() + 1);
+        data.push(self.type_);
+        data.extend_from_slice(&self.payload);
+        data
+    }
+
+    fn parse(msg: &[u8]) -> io::Result<Self> {
+        let Some((&type_, payload)) = msg.split_first() else {
+            return Err(io::Error::new(
+                ErrorKind::InvalidData,
+                "Parsing empty InputPacket".to_string(),
+            ));
+        };
+        Ok(Self {
+            type_,
+            payload: Bytes::copy_from_slice(payload),
+        })
+    }
+}
