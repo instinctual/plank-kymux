@@ -198,7 +198,7 @@ impl AVPacketHeader {
 }
 
 impl super::Serializable for AVPacket {
-    async fn write(self, writer: &mut (dyn KyAsyncWrite + Unpin)) -> Result<()> {
+    async fn write(&self, writer: &mut (dyn KyAsyncWrite + Unpin)) -> Result<()> {
         match self {
             AVPacket::Codec(packet) => {
                 let header = packet.header.serialize();

@@ -34,7 +34,7 @@ pub struct DataPacket {
 }
 
 impl super::Serializable for DataPacket {
-    async fn write(self, writer: &mut (dyn KyAsyncWrite + Unpin)) -> Result<()> {
+    async fn write(&self, writer: &mut (dyn KyAsyncWrite + Unpin)) -> Result<()> {
         if !(1..=MAX_DATA_PACKET_SIZE).contains(&self.payload.len()) {
             return Err(Error::new(
                 ErrorKind::InvalidInput,
@@ -42,6 +42,7 @@ impl super::Serializable for DataPacket {
             ));
         }
         let size = self.payload.len() as u32;
+
 
         writer.write_all(&size.to_be_bytes()).await?;
         writer.write_all(&self.payload).await?;

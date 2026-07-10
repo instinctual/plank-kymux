@@ -44,6 +44,8 @@ where
     W: KyAsyncWrite + Unpin,
     T: Serializable,
 {
-    T::write(packet, writer).await.map_err(ProtocolError::new)?;
+    T::write(&packet, writer)
+        .await
+        .map_err(ProtocolError::new)?;
     writer.flush().await.map_err(ProtocolError::new)
 }

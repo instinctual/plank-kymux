@@ -23,7 +23,7 @@ use std::{future::Future, io};
 
 pub trait Serializable: Sized {
     fn write(
-        self,
+        &self,
         writer: &mut (dyn KyAsyncWrite + Unpin),
     ) -> impl Future<Output = io::Result<()>> + KySend;
 

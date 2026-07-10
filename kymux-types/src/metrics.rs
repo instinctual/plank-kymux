@@ -30,7 +30,7 @@ pub struct MetricsPacket {
 }
 
 impl super::Serializable for MetricsPacket {
-    async fn write(self, writer: &mut (dyn KyAsyncWrite + Unpin)) -> Result<()> {
+    async fn write(&self, writer: &mut (dyn KyAsyncWrite + Unpin)) -> Result<()> {
         let size =
             u16::try_from(self.payload.len()).expect("Metrics packet size must fit in 16 bits");
 

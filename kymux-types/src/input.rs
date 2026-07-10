@@ -31,7 +31,7 @@ pub struct InputPacket {
 }
 
 impl super::Serializable for InputPacket {
-    async fn write(self, writer: &mut (dyn KyAsyncWrite + Unpin)) -> Result<()> {
+    async fn write(&self, writer: &mut (dyn KyAsyncWrite + Unpin)) -> Result<()> {
         let size =
             u16::try_from(self.payload.len()).expect("Input packet size must fit in 16 bits");
 
