@@ -64,3 +64,5 @@ impl super::Serializable for InputPacket {
         Ok(Some(packet))
     }
 }
+
+impl super::AutoFramedSerializable for InputPacket {}

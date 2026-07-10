@@ -76,3 +76,5 @@ impl super::Serializable for DataPacket {
         Ok(Some(packet))
     }
 }
+
+impl super::AutoFramedSerializable for DataPacket {}

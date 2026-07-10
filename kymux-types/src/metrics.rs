@@ -59,3 +59,5 @@ impl super::Serializable for MetricsPacket {
         Ok(Some(packet))
     }
 }
+
+impl super::AutoFramedSerializable for MetricsPacket {}

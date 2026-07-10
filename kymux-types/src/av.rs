@@ -247,3 +247,5 @@ impl super::Serializable for AVPacket {
         Ok(Some(packet))
     }
 }
+
+impl super::AutoFramedSerializable for AVPacket {}
