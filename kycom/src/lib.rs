@@ -32,7 +32,7 @@ mod server;
 
 pub use endpoint::Channel;
 pub use kymux_types::*;
-pub use server::{ChannelForwarder, Forwarder, KyCom};
+pub use server::{Forwarder, KyCom};
 
 struct Task(tokio::task::JoinHandle<()>);
 

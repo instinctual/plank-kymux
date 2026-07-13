@@ -66,13 +66,12 @@ impl types::ProtocolEndpointDriver for VideoServerEndpointDriver {
             .ready()
             .await
             .map_err(ProtocolError::new)?;
-        let send = protocol::start_video_protocol_send(
+        protocol::start_video_protocol_send(
             self.ky_channel,
             self.video_protocol,
             &self.protocol_stats,
         )
-        .await?;
-        Ok(Self::Protocol { send })
+        .await
     }
 }
 
@@ -93,13 +92,12 @@ impl types::ProtocolEndpointDriver for VideoClientEndpointDriver {
             .ready()
             .await
             .map_err(ProtocolError::new)?;
-        let recv = protocol::start_video_protocol_recv(
+        protocol::start_video_protocol_recv(
             self.ky_channel,
             self.video_protocol,
             &self.protocol_stats,
         )
-        .await?;
-        Ok(Self::Protocol { recv })
+        .await
     }
 }
 
@@ -120,13 +118,12 @@ impl types::ProtocolEndpointDriver for AudioServerEndpointDriver {
             .ready()
             .await
             .map_err(ProtocolError::new)?;
-        let send = protocol::start_audio_protocol_send(
+        protocol::start_audio_protocol_send(
             self.ky_channel,
             self.audio_protocol,
             &self.protocol_stats,
         )
-        .await?;
-        Ok(Self::Protocol { send })
+        .await
     }
 }
 
@@ -147,13 +144,12 @@ impl types::ProtocolEndpointDriver for AudioClientEndpointDriver {
             .ready()
             .await
             .map_err(ProtocolError::new)?;
-        let recv = protocol::start_audio_protocol_recv(
+        protocol::start_audio_protocol_recv(
             self.ky_channel,
             self.audio_protocol,
             &self.protocol_stats,
         )
-        .await?;
-        Ok(Self::Protocol { recv })
+        .await
     }
 }
 
@@ -172,8 +168,7 @@ impl types::ProtocolEndpointDriver for DataEndpointDriver {
             .ready()
             .await
             .map_err(ProtocolError::new)?;
-        let (send, recv) = protocol::start_data_protocol(self.ky_channel).await?;
-        Ok(Self::Protocol { send, recv })
+        protocol::start_data_protocol(self.ky_channel).await
     }
 }
 
@@ -192,8 +187,7 @@ impl types::ProtocolEndpointDriver for InputEndpointDriver {
             .ready()
             .await
             .map_err(ProtocolError::new)?;
-        let (send, recv) = protocol::start_input_protocol(self.ky_channel).await?;
-        Ok(Self::Protocol { send, recv })
+        protocol::start_input_protocol(self.ky_channel).await
     }
 }
 
@@ -250,8 +244,7 @@ impl types::ProtocolEndpointDriver for MetricsServerEndpointDriver {
             .ready()
             .await
             .map_err(ProtocolError::new)?;
-        let send = protocol::start_metrics_protocol_send(self.ky_channel).await?;
-        Ok(Self::Protocol { send })
+        protocol::start_metrics_protocol_send(self.ky_channel).await
     }
 }
 
@@ -270,8 +263,7 @@ impl types::ProtocolEndpointDriver for MetricsClientEndpointDriver {
             .ready()
             .await
             .map_err(ProtocolError::new)?;
-        let recv = protocol::start_metrics_protocol_recv(self.ky_channel).await?;
-        Ok(Self::Protocol { recv })
+        protocol::start_metrics_protocol_recv(self.ky_channel).await
     }
 }
 

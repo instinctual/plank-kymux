@@ -229,48 +229,24 @@ impl<T> ProtocolEndpoint<T> {
     }
 }
 
-impl<T, D> From<D> for ProtocolEndpoint<T>
-where
-    D: ProtocolEndpointDriver<Protocol = T> + 'static,
-{
+impl<D: ProtocolEndpointDriver + 'static> From<D> for ProtocolEndpoint<D::Protocol> {
     fn from(driver: D) -> Self {
         Self::new(driver)
     }
 }
 
-pub struct VideoServerProtocol {
-    pub send: ProtocolSend<AVPacket>,
-}
+pub type VideoServerProtocol = ProtocolSend<AVPacket>;
+pub type VideoClientProtocol = ProtocolRecv<AVPacket>;
 
-pub struct VideoClientProtocol {
-    pub recv: ProtocolRecv<AVPacket>,
-}
+pub type AudioServerProtocol = ProtocolSend<AVPacket>;
+pub type AudioClientProtocol = ProtocolRecv<AVPacket>;
 
-pub struct AudioServerProtocol {
-    pub send: ProtocolSend<AVPacket>,
-}
+pub type InputProtocol = (ProtocolSend<InputPacket>, ProtocolRecv<InputPacket>);
 
-pub struct AudioClientProtocol {
-    pub recv: ProtocolRecv<AVPacket>,
-}
+pub type DataProtocol = (ProtocolSend<DataPacket>, ProtocolRecv<DataPacket>);
 
-pub struct InputProtocol {
-    pub send: ProtocolSend<InputPacket>,
-    pub recv: ProtocolRecv<InputPacket>,
-}
-
-pub struct DataProtocol {
-    pub send: ProtocolSend<DataPacket>,
-    pub recv: ProtocolRecv<DataPacket>,
-}
-
-pub struct MetricsServerProtocol {
-    pub send: ProtocolSend<MetricsPacket>,
-}
-
-pub struct MetricsClientProtocol {
-    pub recv: ProtocolRecv<MetricsPacket>,
-}
+pub type MetricsServerProtocol = ProtocolSend<MetricsPacket>;
+pub type MetricsClientProtocol = ProtocolRecv<MetricsPacket>;
 
 pub type VideoServerEndpoint = ProtocolEndpoint<VideoServerProtocol>;
 pub type VideoClientEndpoint = ProtocolEndpoint<VideoClientProtocol>;

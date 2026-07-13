@@ -23,8 +23,7 @@ use crate::endpoint::{Channel, ChannelRole};
 use crate::{KyComAddr, Task};
 
 use async_trait::async_trait;
-use kymux_types::ProtocolError;
-use kymux_types::{self as types, forward, forward_bi};
+use kymux_types::{self as types};
 #[allow(unused)]
 use log::{debug, error, info, warn};
 use std::collections::HashMap;
@@ -130,7 +129,7 @@ impl KyCom {
     pub fn forward<P>(&self, channel: Channel, endpoint: types::ProtocolEndpoint<P>)
     where
         P: 'static,
-        ChannelForwarder<P>: Forwarder,
+        types::ProtocolEndpoint<P>: Forwarder,
     {
         let forwarder_name = std::any::type_name::<P>()
             .rsplit("::")
@@ -139,8 +138,7 @@ impl KyCom {
         debug!("Spawning {forwarder_name} forwarder");
 
         self.forward_join_set.lock().unwrap().spawn(async move {
-            let forwarder = ChannelForwarder { channel, endpoint };
-            if let Err(err) = forwarder.forward().await {
+            if let Err(err) = endpoint.forward(channel).await {
                 info!("{forwarder_name} forwarder ended with result {err:?}");
             }
         });
@@ -151,7 +149,7 @@ impl KyCom {
         endpoint: types::ProtocolEndpoint<T>,
     ) -> io::Result<KyComAddr>
     where
-        ChannelForwarder<T>: Forwarder,
+        types::ProtocolEndpoint<T>: Forwarder,
     {
         let channel = self.register_channel()?;
         let addr = channel.addr();
@@ -181,75 +179,36 @@ impl KyCom {
     }
 }
 
-pub struct ChannelForwarder<P> {
-    channel: Channel,
-    endpoint: types::ProtocolEndpoint<P>,
-}
-
 #[async_trait]
 pub trait Forwarder {
-    async fn forward(self) -> Result<(), ProtocolError>;
+    async fn forward(self, channel: Channel) -> Result<(), types::ProtocolError>;
 }
 
 #[async_trait]
-impl Forwarder for ChannelForwarder<types::VideoClientProtocol> {
-    async fn forward(self) -> Result<(), ProtocolError> {
-        let protocol = self.endpoint.ready().await?;
-        let ipc = self.channel.into_video_server_endpoint().ready().await?;
-        forward(protocol.recv, ipc.send).await
+impl<T: types::Serializable> Forwarder for types::ProtocolEndpoint<types::ProtocolSend<T>> {
+    async fn forward(self, channel: Channel) -> Result<(), types::ProtocolError> {
+        let proto = self.ready().await?;
+        let chan = channel.into_endpoint().ready().await?;
+        types::forward(chan, proto).await
     }
 }
 
 #[async_trait]
-impl Forwarder for ChannelForwarder<types::VideoServerProtocol> {
-    async fn forward(self) -> Result<(), ProtocolError> {
-        let protocol = self.endpoint.ready().await?;
-        let ipc = self.channel.into_video_client_endpoint().ready().await?;
-        forward(ipc.recv, protocol.send).await
+impl<T: types::Serializable> Forwarder for types::ProtocolEndpoint<types::ProtocolRecv<T>> {
+    async fn forward(self, channel: Channel) -> Result<(), types::ProtocolError> {
+        let proto = self.ready().await?;
+        let chan = channel.into_endpoint().ready().await?;
+        types::forward(proto, chan).await
     }
 }
 
 #[async_trait]
-impl Forwarder for ChannelForwarder<types::AudioClientProtocol> {
-    async fn forward(self) -> Result<(), ProtocolError> {
-        let protocol = self.endpoint.ready().await?;
-        let ipc = self.channel.into_audio_server_endpoint().ready().await?;
-        forward(protocol.recv, ipc.send).await
-    }
-}
-
-#[async_trait]
-impl Forwarder for ChannelForwarder<types::AudioServerProtocol> {
-    async fn forward(self) -> Result<(), ProtocolError> {
-        let protocol = self.endpoint.ready().await?;
-        let ipc = self.channel.into_audio_client_endpoint().ready().await?;
-        forward(ipc.recv, protocol.send).await
-    }
-}
-
-#[async_trait]
-impl Forwarder for ChannelForwarder<types::InputProtocol> {
-    async fn forward(self) -> Result<(), ProtocolError> {
-        let protocol = self.endpoint.ready().await?;
-        let ipc = self.channel.into_input_endpoint().ready().await?;
-        forward_bi(protocol.send, protocol.recv, ipc.send, ipc.recv).await
-    }
-}
-
-#[async_trait]
-impl Forwarder for ChannelForwarder<types::DataProtocol> {
-    async fn forward(self) -> Result<(), ProtocolError> {
-        let protocol = self.endpoint.ready().await?;
-        let ipc = self.channel.into_data_endpoint().ready().await?;
-        forward_bi(protocol.send, protocol.recv, ipc.send, ipc.recv).await
-    }
-}
-
-#[async_trait]
-impl Forwarder for ChannelForwarder<types::MetricsServerProtocol> {
-    async fn forward(self) -> Result<(), ProtocolError> {
-        let protocol = self.endpoint.ready().await?;
-        let ipc = self.channel.into_metrics_client_endpoint().ready().await?;
-        forward(ipc.recv, protocol.send).await
+impl<T: types::Serializable> Forwarder
+    for types::ProtocolEndpoint<(types::ProtocolSend<T>, types::ProtocolRecv<T>)>
+{
+    async fn forward(self, channel: Channel) -> Result<(), types::ProtocolError> {
+        let (proto_send, proto_recv) = self.ready().await?;
+        let (chan_send, chan_recv) = channel.into_endpoint().ready().await?;
+        types::forward_bi(proto_send, proto_recv, chan_send, chan_recv).await
     }
 }
