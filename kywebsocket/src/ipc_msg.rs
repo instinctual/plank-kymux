@@ -69,7 +69,7 @@ impl<P: FramedSerializable + KySend> types::ProtocolRecvDriver for IpcMessageRec
 
 pub fn create_message_send_protocol<T>(send: MessageSendStream) -> types::ProtocolSend<T>
 where
-    T: FramedSerializable + KySend + 'static,
+    T: FramedSerializable,
 {
     ProtocolSend::new(IpcMessageSend {
         send,
@@ -79,7 +79,7 @@ where
 
 pub fn create_message_recv_protocol<T>(recv: MessageRecvStream) -> types::ProtocolRecv<T>
 where
-    T: FramedSerializable + KySend + 'static,
+    T: FramedSerializable,
 {
     ProtocolRecv::new(IpcMessageRecv {
         recv,
@@ -92,8 +92,8 @@ pub fn create_message_bi_protocol<TX, RX>(
     recv: MessageRecvStream,
 ) -> (types::ProtocolSend<TX>, types::ProtocolRecv<RX>)
 where
-    TX: FramedSerializable + KySend + 'static,
-    RX: FramedSerializable + KySend + 'static,
+    TX: FramedSerializable,
+    RX: FramedSerializable,
 {
     let send = create_message_send_protocol(send);
     let recv = create_message_recv_protocol(recv);

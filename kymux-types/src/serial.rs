@@ -22,7 +22,7 @@ use kymux_util::{KyAsyncRead, KyAsyncWrite, KySend};
 use std::task::{Poll, Waker};
 use std::{future::Future, io};
 
-pub trait Serializable: Sized {
+pub trait Serializable: Send + Sized + 'static {
     fn write(
         &self,
         writer: &mut (dyn KyAsyncWrite + Unpin),
@@ -35,7 +35,7 @@ pub trait Serializable: Sized {
 
 // The format may be different when sending the packet over a transport that
 // preserve message boundaries. For example, a _size_ field may be omitted.
-pub trait FramedSerializable: Sized {
+pub trait FramedSerializable: Send + Sized + 'static {
     fn serialize(&self) -> Vec<u8>;
 
     fn parse(msg: &[u8]) -> io::Result<Self>;

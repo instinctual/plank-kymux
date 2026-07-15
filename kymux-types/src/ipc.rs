@@ -35,7 +35,7 @@ struct IpcSend<W, P> {
 
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
-impl<W: KyAsyncWrite + Unpin, P: Serializable + Send> ProtocolSendDriver for IpcSend<W, P> {
+impl<W: KyAsyncWrite + Unpin, P: Serializable> ProtocolSendDriver for IpcSend<W, P> {
     type Packet = P;
 
     async fn send(&mut self, packet: P) -> Result<(), ProtocolError> {
@@ -54,7 +54,7 @@ struct IpcRecv<R, P> {
 
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
-impl<R: KyAsyncRead + Unpin, P: Serializable + Send> ProtocolRecvDriver for IpcRecv<R, P> {
+impl<R: KyAsyncRead + Unpin, P: Serializable> ProtocolRecvDriver for IpcRecv<R, P> {
     type Packet = P;
 
     async fn recv(&mut self) -> Result<Option<P>, ProtocolError> {
@@ -64,7 +64,7 @@ impl<R: KyAsyncRead + Unpin, P: Serializable + Send> ProtocolRecvDriver for IpcR
 
 pub fn create_send_protocol<T>(writer: impl KyAsyncWrite + Unpin + 'static) -> ProtocolSend<T>
 where
-    T: Serializable + Send + 'static,
+    T: Serializable,
 {
     ProtocolSend::new(IpcSend {
         writer,
@@ -74,7 +74,7 @@ where
 
 pub fn create_recv_protocol<T>(reader: impl KyAsyncRead + Unpin + 'static) -> ProtocolRecv<T>
 where
-    T: Serializable + Send + 'static,
+    T: Serializable,
 {
     ProtocolRecv::new(IpcRecv {
         reader,
@@ -87,8 +87,8 @@ pub fn create_bi_protocol<TX, RX>(
     writer: impl KyAsyncWrite + Unpin + 'static,
 ) -> (ProtocolSend<TX>, ProtocolRecv<RX>)
 where
-    TX: Serializable + Send + 'static,
-    RX: Serializable + Send + 'static,
+    TX: Serializable,
+    RX: Serializable,
 {
     let send = create_send_protocol(writer);
     let recv = create_recv_protocol(reader);
