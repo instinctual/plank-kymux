@@ -192,10 +192,8 @@ pub async fn forward_bi<T, U>(
     b_send: ProtocolSend<T>,
     b_recv: ProtocolRecv<U>,
 ) -> Result<(), ProtocolError> {
-    tokio::select! {
-        res = forward(b_recv, a_send) => res,
-        res = forward(a_recv, b_send) => res,
-    }
+    tokio::try_join!(forward(b_recv, a_send), forward(a_recv, b_send))?;
+    Ok(())
 }
 
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
