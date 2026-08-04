@@ -89,7 +89,7 @@ use crate::runtime;
 use crate::task::Task;
 
 use async_trait::async_trait;
-use byteorder::{BigEndian, ByteOrder, WriteBytesExt};
+use byteorder::{BigEndian, ByteOrder};
 use kymux_types::av::*;
 use kymux_util::*;
 use kynet::error::ConnectionError;
@@ -154,10 +154,13 @@ impl ProtocolSendDriver for VideoGopStreamProtocolSendDriver {
                         // numbers. Since they are repeated on each stream,
                         // this helps the receiver to determine when there is a
                         // real new codec or config packet.
+                        let mut ids = [0; 12];
+                        BigEndian::write_u32(&mut ids[0..4], self.gop_id);
+                        BigEndian::write_u32(&mut ids[4..8], self.codec_gen);
+                        BigEndian::write_u32(&mut ids[8..12], self.config_gen);
+
                         let mut buf = vec![];
-                        AsyncWriteExt::write_u32(&mut buf, self.gop_id);
-                        AsyncWriteExt::write_u32(&mut buf, self.codec_gen);
-                        AsyncWriteExt::write_u32(&mut buf, self.config_gen);
+                        buf.extend_from_slice(&ids);
 
                         self.gop_id += 1;
 
