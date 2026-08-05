@@ -18,14 +18,10 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#![allow(unused)] // TODO remove
-
-use crate::runtime;
 use crate::task::Task;
 
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
-use std::future::Future;
 
 use bytes::{BufMut, Bytes, BytesMut};
 use kymux_util::*;
@@ -262,6 +258,7 @@ pub(crate) struct KyChannel {
     endpoint_id: u16,
     conn: Connection,
     rx_unistreams: mpsc::Receiver<RecvStream>,
+    // Unused for now; kept for symmetry with accept_bi.
     rx_bistreams: mpsc::Receiver<(SendStream, RecvStream)>,
     rx_datagrams: mpsc::Receiver<Bytes>,
     dropper: KyChannelDropper,
@@ -270,6 +267,8 @@ pub(crate) struct KyChannel {
 pub(crate) struct KyChannelSend {
     endpoint_id: u16,
     conn: Connection,
+    /// See [`KyChannelDropper`].
+    #[expect(dead_code)]
     dropper: KyArc<KyChannelDropper>,
 }
 
@@ -279,15 +278,20 @@ pub(crate) struct KyChannelRecv {
     rx_unistreams: mpsc::Receiver<RecvStream>,
     rx_bistreams: mpsc::Receiver<(SendStream, RecvStream)>,
     rx_datagrams: mpsc::Receiver<Bytes>,
+    /// See [`KyChannelDropper`].
+    #[expect(dead_code)]
     dropper: KyArc<KyChannelDropper>,
 }
 
+/// Removes the endpoint from the router on drop.
 struct KyChannelDropper {
     endpoint_id: u16,
     clients: KyArc<KyMutex<ClientMap>>, // to implement Drop
 }
 
 impl KyChannelSend {
+    // Unused for now; kept for API symmetry with KyChannel.
+    #[expect(dead_code)]
     pub fn endpoint_id(&self) -> u16 {
         self.endpoint_id
     }
@@ -304,6 +308,7 @@ impl KyChannelSend {
         Ok(send)
     }
 
+    // See KyChannel::open_bi's comment.
     async fn open_bi_(
         conn: &Connection,
         endpoint_id: u16,
@@ -335,28 +340,36 @@ impl KyChannelSend {
         Self::open_uni_(&self.conn, self.endpoint_id).await
     }
 
+    // See KyChannel::open_bi's comment.
+    #[expect(dead_code)]
     pub async fn open_bi(&self) -> Result<(SendStream, RecvStream), ConnectionError> {
         Self::open_bi_(&self.conn, self.endpoint_id).await
     }
 
+    #[expect(dead_code)]
     pub async fn send_datagram(&self, data: Bytes) -> Result<(), SendDatagramError> {
         Self::send_datagram_(&self.conn, data).await
     }
 
+    #[expect(dead_code)]
     pub fn max_datagram_size(&self) -> Option<usize> {
         Self::max_datagram_size_(&self.conn)
     }
 
+    #[expect(dead_code)]
     pub fn write_datagram_header(&self, buf: &mut BytesMut) {
         Self::write_datagram_header_(self.endpoint_id, buf);
     }
 
+    #[expect(dead_code)]
     pub async fn connection_stats(&self) -> ConnectionStats {
         KyChannel::connection_stats_(&self.conn).await
     }
 }
 
 impl KyChannelRecv {
+    // See KyChannelSend::endpoint_id's comment.
+    #[expect(dead_code)]
     pub fn endpoint_id(&self) -> u16 {
         self.endpoint_id
     }
@@ -371,14 +384,18 @@ impl KyChannelRecv {
         Self::recv_(&mut self.rx_unistreams).await
     }
 
+    // See KyChannel::accept_bi's comment.
+    #[expect(dead_code)]
     pub async fn accept_bi(&mut self) -> Result<(SendStream, RecvStream), RouterError> {
         Self::recv_(&mut self.rx_bistreams).await
     }
 
+    #[expect(dead_code)]
     pub async fn recv_datagram(&mut self) -> Result<Bytes, RouterError> {
         Self::recv_(&mut self.rx_datagrams).await
     }
 
+    #[expect(dead_code)]
     pub async fn connection_stats(&self) -> ConnectionStats {
         KyChannel::connection_stats_(&self.conn).await
     }
@@ -414,6 +431,8 @@ impl KyChannel {
         KyChannelSend::open_uni_(&self.conn, self.endpoint_id).await
     }
 
+    // Unused for now; kept for future protocols.
+    #[expect(dead_code)]
     pub async fn open_bi(&self) -> Result<(SendStream, RecvStream), ConnectionError> {
         KyChannelSend::open_bi_(&self.conn, self.endpoint_id).await
     }
@@ -422,6 +441,7 @@ impl KyChannel {
         KyChannelRecv::recv_(&mut self.rx_unistreams).await
     }
 
+    #[expect(dead_code)]
     pub async fn accept_bi(&mut self) -> Result<(SendStream, RecvStream), RouterError> {
         KyChannelRecv::recv_(&mut self.rx_bistreams).await
     }
@@ -446,6 +466,7 @@ impl KyChannel {
         conn.stats().await
     }
 
+    #[expect(dead_code)]
     pub async fn connection_stats(&self) -> ConnectionStats {
         Self::connection_stats_(&self.conn).await
     }

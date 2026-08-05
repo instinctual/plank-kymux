@@ -92,10 +92,8 @@ use async_trait::async_trait;
 use byteorder::{BigEndian, ByteOrder};
 use kymux_types::av::*;
 use kymux_util::*;
-use kynet::error::ConnectionError;
 use kynet::{RecvStream, SendStream};
-#[allow(unused)]
-use log::{debug, error, info, warn};
+use log::{debug, error, warn};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::mpsc;
 
