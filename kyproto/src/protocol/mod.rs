@@ -59,8 +59,7 @@ pub(crate) async fn start_video_protocol_send(
             driver::av::video_gopstream::VideoGopStreamProtocolSendDriver::start(
                 ky_channel,
                 protocol_stats,
-            )
-            .await?,
+            )?,
         ),
         VideoProtocol::Unreliable => ProtocolSend::new(
             driver::av::video_unreliable::VideoUnreliableProtocolSendDriver::start(
@@ -95,8 +94,7 @@ pub(crate) async fn start_video_protocol_recv(
             driver::av::video_gopstream::VideoGopStreamProtocolRecvDriver::start(
                 ky_channel,
                 protocol_stats,
-            )
-            .await?,
+            )?,
         ),
         VideoProtocol::Unreliable => ProtocolRecv::new(
             driver::av::video_unreliable::VideoUnreliableProtocolRecvDriver::start(

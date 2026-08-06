@@ -108,7 +108,7 @@ pub(crate) struct VideoGopStreamProtocolSendDriver {
 }
 
 impl VideoGopStreamProtocolSendDriver {
-    pub(crate) async fn start(
+    pub(crate) fn start(
         ky_channel: KyChannel,
         _protocol_stats: &KyArc<KyMutex<ProtocolStats>>,
     ) -> Result<Self, ProtocolError> {
@@ -230,7 +230,7 @@ pub(crate) struct VideoGopStreamProtocolRecvDriver {
 }
 
 impl VideoGopStreamProtocolRecvDriver {
-    pub(crate) async fn start(
+    pub(crate) fn start(
         ky_channel: KyChannel,
         _protocol_stats: &KyArc<KyMutex<ProtocolStats>>,
     ) -> Result<Self, ProtocolError> {
