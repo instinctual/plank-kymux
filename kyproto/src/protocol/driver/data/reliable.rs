@@ -20,23 +20,25 @@
 
 use crate::protocol::driver;
 use crate::protocol::{ProtocolError, ProtocolRecvDriver, ProtocolSendDriver};
-use crate::router::{KyChannel, KyChannelRecv, KyChannelSend};
+use crate::router::{KyChannelRecv, KyChannelSend};
 
 use async_trait::async_trait;
-use bytes::BytesMut;
 use kymux_types::data::*;
 use kynet::{RecvStream, SendStream};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 pub(crate) struct ReliableProtocolSendDriver {
-    ky_channel: KyChannelSend,
+    // Keeps the channel open; see KyChannelDropper.
+    _ky_channel: KyChannelSend,
     send: SendStream,
 }
 
 impl ReliableProtocolSendDriver {
     pub(crate) async fn start(ky_channel: KyChannelSend) -> Result<Self, ProtocolError> {
         let send = ky_channel.open_uni().await.map_err(ProtocolError::new)?;
-        Ok(Self { ky_channel, send })
+        Ok(Self {
+            _ky_channel: ky_channel,
+            send,
+        })
     }
 }
 
@@ -51,14 +53,18 @@ impl ProtocolSendDriver for ReliableProtocolSendDriver {
 }
 
 pub(crate) struct ReliableProtocolRecvDriver {
-    ky_channel: KyChannelRecv,
+    // Keeps the channel open; see KyChannelDropper.
+    _ky_channel: KyChannelRecv,
     recv: RecvStream,
 }
 
 impl ReliableProtocolRecvDriver {
     pub(crate) async fn start(mut ky_channel: KyChannelRecv) -> Result<Self, ProtocolError> {
         let recv = ky_channel.accept_uni().await.map_err(ProtocolError::new)?;
-        Ok(Self { ky_channel, recv })
+        Ok(Self {
+            _ky_channel: ky_channel,
+            recv,
+        })
     }
 }
 

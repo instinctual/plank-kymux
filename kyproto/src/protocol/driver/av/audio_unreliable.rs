@@ -301,7 +301,7 @@ impl AudioUnreliableProtocolRecvDriver {
 
     async fn process(
         mut rx: mpsc::Receiver<RecvMsg>,
-        mut tx_client: mpsc::Sender<AVPacket>,
+        tx_client: mpsc::Sender<AVPacket>,
         protocol_stats: KyArc<KyMutex<ProtocolStats>>,
     ) -> Result<(), ProtocolError> {
         let mut kypacket_sequencer = Sequencer::<u32>::new();

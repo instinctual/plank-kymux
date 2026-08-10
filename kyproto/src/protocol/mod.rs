@@ -18,18 +18,14 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#![allow(unused)]
-
 use crate::protocol::driver::{ProtocolRecvDriver, ProtocolSendDriver};
 use crate::router::KyChannel;
 use crate::{ProtocolError, ProtocolStats};
 
 use kymux_types::*;
 
-use async_trait::async_trait;
 use kymux_util::*;
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
 
 pub(crate) mod clock_sync;
 pub(crate) mod driver;

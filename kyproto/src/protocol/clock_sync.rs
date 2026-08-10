@@ -21,7 +21,7 @@
 use crate::ProtocolError;
 use crate::clock;
 use crate::router::KyChannel;
-use crate::runtime::{self, Duration, SystemTime, UNIX_EPOCH};
+use crate::runtime::{self, Duration};
 
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use kymux_types as types;
@@ -143,7 +143,7 @@ impl ClockSyncClientProtocol {
                 // t3: 8 bytes
                 validate_sync_response(&response, self.ky_channel.endpoint_id())?;
                 let t4 = clock::now_micros().map_err(ProtocolError::new)?;
-                let endpoint_id = response.get_u16();
+                let _endpoint_id = response.get_u16();
                 let id = response.get_u32();
                 if req_id == id {
                     let t1 = response.get_i64();

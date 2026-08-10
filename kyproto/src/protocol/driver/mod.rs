@@ -29,7 +29,7 @@ use crate::protocol::ProtocolError;
 pub(crate) use kymux_types::{ProtocolRecvDriver, ProtocolSendDriver, Serializable};
 use kymux_util::{KyAsyncRead, KyAsyncWrite};
 
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
+use tokio::io::AsyncWriteExt;
 
 pub(crate) async fn read_packet<R, T>(reader: &mut R) -> Result<Option<T>, ProtocolError>
 where

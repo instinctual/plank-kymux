@@ -539,7 +539,7 @@ impl VideoUnreliableProtocolRecvDriver {
 
     async fn process(
         mut rx: mpsc::Receiver<RecvMsg>,
-        mut tx_client: mpsc::Sender<AVPacket>,
+        tx_client: mpsc::Sender<AVPacket>,
         protocol_stats: KyArc<KyMutex<ProtocolStats>>,
     ) -> Result<(), ProtocolError> {
         let mut group_sequencer = Sequencer::<u32>::new();
@@ -553,7 +553,7 @@ impl VideoUnreliableProtocolRecvDriver {
                 msg = rx.recv() => {
                     match msg {
                         Some(RecvMsg::Stream(msg)) => {
-                            if let AVPacket::Codec(packet) = &msg.packet {
+                            if let AVPacket::Codec(_packet) = &msg.packet {
                                 debug!("===== SEND codec packet to client");
                                 tx_client.send(msg.packet).await.map_err(ProtocolError::new)?;
                                 continue;

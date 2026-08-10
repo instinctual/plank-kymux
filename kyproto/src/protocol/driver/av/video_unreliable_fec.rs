@@ -676,7 +676,7 @@ impl VideoUnreliableFecProtocolRecvDriver {
                 msg = rx.recv() => {
                     match msg.transpose()? {
                         Some(RecvMsg::Stream(msg)) => {
-                            if let AVPacket::Codec(packet) = &msg.packet {
+                            if let AVPacket::Codec(_packet) = &msg.packet {
                                 debug!("===== SEND codec packet to client");
                                 tx_client.send(Ok(msg.packet)).await.map_err(ProtocolError::new)?;
                                 continue;
