@@ -575,8 +575,6 @@ impl PendingGroup {
     }
 
     fn next_packet(&self, next_kypacket_seq: u64) -> NextPacket {
-        let mut cached_min_instant = None;
-
         if !self.config_packet.is_none() {
             if let ConfigPacket::Ready(packet) = &self.config_packet
                 && packet.kypacket_seq == next_kypacket_seq
@@ -592,26 +590,12 @@ impl PendingGroup {
                 let mut ready = false;
                 if datagrams[0].kypacket_seq == next_kypacket_seq {
                     ready = true;
-                } else {
-                    // cached_min_instant is an Option<Option<Instant>>:
-                    //  - the first Option indicates if the value is cached
-                    //  - the second Option is there is a min instant at
-                    //    all (if there are no items at all, there is no min)
-                    let min_instant = if let Some(cached) = cached_min_instant {
-                        cached
+                } else if let Some(min_instant) = self.min_instant() {
+                    let deadline = min_instant + AudioUnreliableProtocolRecvDriver::MAX_BUFFERING;
+                    if deadline <= Instant::now() {
+                        ready = true;
                     } else {
-                        let min_instant = self.min_instant();
-                        cached_min_instant = Some(min_instant);
-                        min_instant
-                    };
-                    if let Some(min_instant) = min_instant {
-                        let deadline =
-                            min_instant + AudioUnreliableProtocolRecvDriver::MAX_BUFFERING;
-                        if deadline <= Instant::now() {
-                            ready = true;
-                        } else {
-                            return NextPacket::Deadline(deadline);
-                        }
+                        return NextPacket::Deadline(deadline);
                     }
                 }
                 if ready {
