@@ -28,7 +28,6 @@ use log::{debug, error, info, warn};
 use tokio::sync::oneshot;
 
 pub(crate) struct Task {
-    pub(crate) name: String,
     tx: oneshot::Sender<()>,
 }
 
@@ -40,23 +39,24 @@ impl Task {
     {
         let name = name.into();
         let (tx, rx) = oneshot::channel();
-        let task_name = name.clone();
 
         runtime::spawn(async move {
             tokio::select! {
                 _ = rx => {
-                    debug!("Task {task_name} interrupted");
+                    debug!("Task {name} interrupted");
                 }
                 _ = task => {
-                    debug!("Task {task_name} terminated");
+                    debug!("Task {name} terminated");
                 }
             }
         });
 
-        Task { name, tx }
+        Task { tx }
     }
 
-    pub(crate) fn cancel(self) -> Result<(), ()> {
-        self.tx.send(())
+    /// Requests cancellation. A failed send just means the task already
+    /// stopped on its own; not an error.
+    pub(crate) fn cancel(self) {
+        let _ = self.tx.send(());
     }
 }

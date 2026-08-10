@@ -253,11 +253,7 @@ impl Drop for Router {
     fn drop(&mut self) {
         let tasks = std::mem::take(&mut self.tasks);
         for task in tasks {
-            let name = task.name.clone();
-            let ret = task.cancel();
-            if ret.is_err() {
-                warn!("Task {name} seems to be already stopped");
-            }
+            task.cancel();
         }
     }
 }
