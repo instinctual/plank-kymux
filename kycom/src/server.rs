@@ -179,9 +179,6 @@ impl KyCom {
             }
         }
     }
-
-    /// Dummy function kept for compatibility.
-    pub fn stop(self) {}
 }
 
 pub struct ChannelForwarder<P> {
