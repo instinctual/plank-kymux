@@ -60,7 +60,7 @@ pub struct KyCom {
     // Some() initially, then None once accept() fails
     pending_endpoints: Arc<Mutex<Option<EndpointMap>>>,
     _listen_task: Task,
-    forward_join_set: JoinSet<()>,
+    forward_join_set: Mutex<JoinSet<()>>,
 }
 
 impl KyCom {
@@ -127,7 +127,7 @@ impl KyCom {
         Ok(channel)
     }
 
-    pub fn forward<P>(&mut self, channel: Channel, endpoint: types::ProtocolEndpoint<P>)
+    pub fn forward<P>(&self, channel: Channel, endpoint: types::ProtocolEndpoint<P>)
     where
         P: 'static,
         ChannelForwarder<P>: Forwarder,
@@ -138,7 +138,7 @@ impl KyCom {
             .unwrap_or("Unknown");
         debug!("Spawning {forwarder_name} forwarder");
 
-        self.forward_join_set.spawn(async move {
+        self.forward_join_set.lock().unwrap().spawn(async move {
             let forwarder = ChannelForwarder { channel, endpoint };
             if let Err(err) = forwarder.forward().await {
                 info!("{forwarder_name} forwarder ended with result {err:?}");
@@ -147,7 +147,7 @@ impl KyCom {
     }
 
     pub fn register_and_forward<T: 'static>(
-        &mut self,
+        &self,
         endpoint: types::ProtocolEndpoint<T>,
     ) -> io::Result<KyComAddr>
     where
