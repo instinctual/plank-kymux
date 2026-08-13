@@ -331,7 +331,7 @@ impl ProtocolRecvDriver for VideoGopStreamProtocolRecvDriver {
         while let Some(msg) = self.rx.recv().await {
             match msg {
                 RecvMsg::NewStream(recv) => {
-                    info!("NewStream");
+                    debug!("NewStream");
                     let tx = self.tx.clone();
 
                     runtime::spawn(async move {
