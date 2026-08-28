@@ -23,5 +23,9 @@ pub use kycom;
 pub use kymux_types as types;
 pub use kynet;
 pub use kyproto;
-#[cfg(any(feature = "backend-websocket-js", feature = "backend-actix-ws"))]
+#[cfg(any(
+    feature = "backend-websocket-js",
+    feature = "backend-actix-ws",
+    feature = "backend-tungstenite"
+))]
 pub use kywebsocket;

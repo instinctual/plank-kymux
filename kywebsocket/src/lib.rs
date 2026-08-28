@@ -33,6 +33,11 @@ pub use kymux_util::*;
 
 use std::io::Result;
 
+#[cfg(feature = "kywebsocket-tungstenite")]
+pub mod tungstenite {
+    pub use crate::driver::tungstenite::TlsConfig;
+}
+
 #[derive(Debug)]
 pub struct Connection {
     pub send: MessageSendStream,
@@ -48,6 +53,14 @@ impl Connection {
     #[cfg(feature = "kywebsocket-actix-ws")]
     pub fn actix_ws_new(session: actix_ws::Session, stream: actix_ws::MessageStream) -> Self {
         driver::actix_ws::new(session, stream)
+    }
+
+    #[cfg(feature = "kywebsocket-tungstenite")]
+    pub async fn tungstenite_connect(
+        url: &str,
+        tls_config: tungstenite::TlsConfig,
+    ) -> Result<Self> {
+        driver::tungstenite::connect(url, tls_config).await
     }
 
     pub async fn close(self) {

@@ -28,6 +28,11 @@ pub(crate) mod actix_ws;
 #[cfg(all(feature = "kywebsocket-actix-ws", target_family = "wasm"))]
 compile_error!("ActixWS is not available for wasm");
 
+#[cfg(all(feature = "kywebsocket-tungstenite", not(target_family = "wasm")))]
+pub(crate) mod tungstenite;
+#[cfg(all(feature = "kywebsocket-tungstenite", target_family = "wasm"))]
+compile_error!("Tungstenite is not available for wasm");
+
 pub use kymux_util::*;
 
 use std::fmt::Debug;
