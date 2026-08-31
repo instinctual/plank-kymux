@@ -246,10 +246,11 @@ impl From<quinn::Connection> for Connection {
 pub struct QuinnClientOptions {
     pub max_idle_timeout: Option<Duration>,
     pub keep_alive_interval: Option<Duration>,
-    /// Maximum complete UDP payload accepted and probed by QUIC, excluding
-    /// the outer IP and UDP headers. This allows an application to account
-    /// for an encapsulating transport whose virtual interface hides a smaller
-    /// physical datagram boundary.
+    /// Fixed complete UDP payload supported by the resolved path, excluding
+    /// the outer IP and UDP headers. When set, QUIC uses this as its initial,
+    /// minimum, and advertised payload size and disables independent path-MTU
+    /// discovery. This keeps a real-time datagram protocol's packetization
+    /// contract stable for the lifetime of the connection.
     pub max_udp_payload_size: Option<u16>,
     /// SHA-256 hash of the expected server certificate (hex encoded).
     /// If provided, the server certificate will be validated by comparing its hash
@@ -320,9 +321,10 @@ impl QuinnConnectionDriver {
             transport_config.congestion_controller_factory(factory.clone());
         }
         if let Some(max_udp_payload_size) = options.max_udp_payload_size {
-            let mut mtu_discovery = quinn::MtuDiscoveryConfig::default();
-            mtu_discovery.upper_bound(max_udp_payload_size);
-            transport_config.mtu_discovery_config(Some(mtu_discovery));
+            transport_config
+                .initial_mtu(max_udp_payload_size)
+                .min_mtu(max_udp_payload_size)
+                .mtu_discovery_config(None);
         }
         config.transport_config(Arc::new(transport_config));
 

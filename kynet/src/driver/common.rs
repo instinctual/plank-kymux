@@ -35,6 +35,10 @@ use super::quinn::{CongestionControllerFactory, DatagramPacer, KYMUX_ALPN, Quinn
 pub struct CommonServerOptions {
     pub max_idle_timeout: Option<Duration>,
     pub keep_alive_interval: Option<Duration>,
+    /// Fixed complete UDP payload supported by the resolved path, excluding
+    /// the outer IP and UDP headers. See `QuinnClientOptions` for the matching
+    /// client-side contract.
+    pub max_udp_payload_size: Option<u16>,
     pub congestion_controller_factory: Option<CongestionControllerFactory>,
     pub datagram_pacer: Option<Arc<DatagramPacer>>,
 }
@@ -85,6 +89,12 @@ impl CommonServer {
         if let Some(factory) = &options.congestion_controller_factory {
             transport_config.congestion_controller_factory(factory.clone());
         }
+        if let Some(max_udp_payload_size) = options.max_udp_payload_size {
+            transport_config
+                .initial_mtu(max_udp_payload_size)
+                .min_mtu(max_udp_payload_size)
+                .mtu_discovery_config(None);
+        }
         server_config.transport_config(Arc::new(transport_config));
 
         // Create UDP socket with dual-stack support when binding to IPv6.
@@ -108,13 +118,17 @@ impl CommonServer {
         let udp_socket: std::net::UdpSocket = socket.into();
         let runtime = Arc::new(quinn::TokioRuntime);
 
-        let quinn_endpoint = quinn::Endpoint::new(
-            quinn::EndpointConfig::default(),
-            Some(server_config),
-            udp_socket,
-            runtime,
-        )
-        .map_err(|e| ConnectionError(format!("Failed to create endpoint: {:?}", e)))?;
+        let mut endpoint_config = quinn::EndpointConfig::default();
+        if let Some(max_udp_payload_size) = options.max_udp_payload_size {
+            endpoint_config
+                .max_udp_payload_size(max_udp_payload_size)
+                .map_err(|error| {
+                    ConnectionError(format!("Invalid maximum UDP payload size: {error}"))
+                })?;
+        }
+        let quinn_endpoint =
+            quinn::Endpoint::new(endpoint_config, Some(server_config), udp_socket, runtime)
+                .map_err(|e| ConnectionError(format!("Failed to create endpoint: {:?}", e)))?;
 
         Ok(Self {
             quinn_endpoint: Arc::new(quinn_endpoint),
