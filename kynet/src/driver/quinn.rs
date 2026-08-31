@@ -265,7 +265,14 @@ impl ConnectionDriver for QuinnConnectionDriver {
     }
 
     async fn send_datagram(&self, data: Bytes) -> Result<(), SendDatagramError> {
-        self.conn.send_datagram(data)?;
+        // Preserve older datagrams during congestion instead of allowing
+        // Quinn's non-blocking submission path to evict them.  Protocols such
+        // as UnreliableFec spread one media frame across many datagrams, so an
+        // eviction can make an otherwise recoverable frame undecodable.  The
+        // wait also propagates congestion back to the media producer, where
+        // stale whole frames can be dropped without corrupting the frame that
+        // is already being submitted.
+        self.conn.send_datagram_wait(data).await?;
         Ok(())
     }
 
