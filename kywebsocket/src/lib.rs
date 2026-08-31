@@ -65,6 +65,12 @@ pub struct MessageSendStream {
 }
 
 impl MessageSendStream {
+    pub fn new(driver: impl MessageSendStreamDriver + 'static) -> Self {
+        Self {
+            driver: Box::new(driver),
+        }
+    }
+
     pub async fn send(&mut self, msg: Bytes) -> Result<()> {
         self.driver.send(msg).await
     }
@@ -80,6 +86,12 @@ pub struct MessageRecvStream {
 }
 
 impl MessageRecvStream {
+    pub fn new(driver: impl MessageRecvStreamDriver + 'static) -> Self {
+        Self {
+            driver: Box::new(driver),
+        }
+    }
+
     pub async fn recv(&mut self) -> Result<Option<Bytes>> {
         self.driver.recv().await
     }

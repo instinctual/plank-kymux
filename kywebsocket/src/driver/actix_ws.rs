@@ -28,12 +28,8 @@ use bytes::Bytes;
 use tokio::sync::mpsc;
 
 pub fn new(session: actix_ws::Session, stream: actix_ws::MessageStream) -> Connection {
-    let send = MessageSendStream {
-        driver: Box::new(ActixWsMessageSendStreamDriver::new(session)),
-    };
-    let recv = MessageRecvStream {
-        driver: Box::new(ActixWsMessageRecvStreamDriver::new(stream)),
-    };
+    let send = MessageSendStream::new(ActixWsMessageSendStreamDriver::new(session));
+    let recv = MessageRecvStream::new(ActixWsMessageRecvStreamDriver::new(stream));
     Connection { send, recv }
 }
 

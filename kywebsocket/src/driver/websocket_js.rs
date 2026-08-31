@@ -76,12 +76,8 @@ pub async fn connect(url: &str) -> Result<Connection> {
 fn new(ws: web_sys::WebSocket) -> Connection {
     ws.set_binary_type(web_sys::BinaryType::Arraybuffer);
 
-    let send = MessageSendStream {
-        driver: Box::new(WebSocketJsMessageSendStreamDriver::new(ws.clone())),
-    };
-    let recv = MessageRecvStream {
-        driver: Box::new(WebSocketJsMessageRecvStreamDriver::new(ws)),
-    };
+    let send = MessageSendStream::new(WebSocketJsMessageSendStreamDriver::new(ws.clone()));
+    let recv = MessageRecvStream::new(WebSocketJsMessageRecvStreamDriver::new(ws));
     Connection { send, recv }
 }
 
