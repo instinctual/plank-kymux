@@ -29,7 +29,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use socket2::{Domain, Protocol, Socket, Type};
 
-use super::quinn::{DATAGRAM_SEND_BUFFER_BYTES, KYMUX_ALPN};
+use super::quinn::KYMUX_ALPN;
 
 #[derive(Default)]
 pub struct CommonServerOptions {
@@ -79,7 +79,6 @@ impl CommonServer {
                 .map_err(|_| ConnectionError("Invalid max_idle_timeout".to_string()))?,
         );
         transport_config.keep_alive_interval(options.keep_alive_interval);
-        transport_config.datagram_send_buffer_size(DATAGRAM_SEND_BUFFER_BYTES);
         server_config.transport_config(Arc::new(transport_config));
 
         // Create UDP socket with dual-stack support when binding to IPv6.

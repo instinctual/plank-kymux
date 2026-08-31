@@ -39,10 +39,6 @@ use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 /// ALPN protocol identifier for Kymux protocol over standard QUIC.
 pub const KYMUX_ALPN: &[u8] = b"kymux";
 
-/// Experimental outgoing DATAGRAM capacity used to distinguish local queue
-/// exhaustion from congestion-window starvation under controlled loss.
-pub const DATAGRAM_SEND_BUFFER_BYTES: usize = 4 * 1024 * 1024;
-
 /// Certificate verifier that validates server certificates by comparing their SHA-256 hash.
 /// This is used for connecting to servers with self-signed certificates
 /// where the expected hash is provided out-of-band (similar to WebTransport's serverCertificateHashes).
@@ -185,7 +181,6 @@ impl QuinnConnectionDriver {
                 .map_err(|_| ConnectionError("Invalid max_idle_timeout".to_string()))?,
         );
         transport_config.keep_alive_interval(options.keep_alive_interval);
-        transport_config.datagram_send_buffer_size(DATAGRAM_SEND_BUFFER_BYTES);
         if let Some(max_udp_payload_size) = options.max_udp_payload_size {
             let mut mtu_discovery = quinn::MtuDiscoveryConfig::default();
             mtu_discovery.upper_bound(max_udp_payload_size);
@@ -270,7 +265,14 @@ impl ConnectionDriver for QuinnConnectionDriver {
     }
 
     async fn send_datagram(&self, data: Bytes) -> Result<(), SendDatagramError> {
-        self.conn.send_datagram(data)?;
+        // Preserve older datagrams during congestion instead of allowing
+        // Quinn's non-blocking submission path to evict them.  Protocols such
+        // as UnreliableFec spread one media frame across many datagrams, so an
+        // eviction can make an otherwise recoverable frame undecodable.  The
+        // wait also propagates congestion back to the media producer, where
+        // stale whole frames can be dropped without corrupting the frame that
+        // is already being submitted.
+        self.conn.send_datagram_wait(data).await?;
         Ok(())
     }
 
