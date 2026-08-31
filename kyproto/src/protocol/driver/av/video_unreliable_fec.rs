@@ -272,7 +272,10 @@ use crate::router::KyChannel;
 use crate::runtime::{self, Instant};
 use crate::task::Task;
 
-use std::{collections::VecDeque, time::Duration};
+use std::{
+    collections::{HashSet, VecDeque},
+    time::Duration,
+};
 
 use async_trait::async_trait;
 use byteorder::{BigEndian, ByteOrder};
@@ -630,8 +633,22 @@ impl VideoUnreliableFecProtocolRecvDriver {
                 Action::Packet {
                     kypacket_seq,
                     packet,
+                    fec_stats,
                 } => {
                     debug!("===== SEND kypacket {kypacket_seq} to client");
+                    if fec_stats.source_symbols != 0 {
+                        let mut protocol_stats = protocol_stats.lock();
+                        protocol_stats.video_fec_source_symbols = Some(
+                            protocol_stats.video_fec_source_symbols.unwrap_or_default()
+                                + fec_stats.source_symbols,
+                        );
+                        protocol_stats.video_fec_source_symbols_missing = Some(
+                            protocol_stats
+                                .video_fec_source_symbols_missing
+                                .unwrap_or_default()
+                                + fec_stats.missing_source_symbols,
+                        );
+                    }
                     if kypacket_seq > next_kypacket_seq {
                         let missing_packets = kypacket_seq - next_kypacket_seq;
                         {
@@ -688,6 +705,7 @@ struct DatagramPacket {
     packet: AVPacket,
     kypacket_seq: u64,
     instant: Instant, // assemble() timestamp
+    fec_stats: VideoFecStats,
 }
 
 #[derive(Debug)]
@@ -711,9 +729,26 @@ struct PacketRef {
 
 #[derive(Debug)]
 enum Action {
-    Packet { kypacket_seq: u64, packet: AVPacket },
+    Packet {
+        kypacket_seq: u64,
+        packet: AVPacket,
+        fec_stats: VideoFecStats,
+    },
     Deadline(Instant),
     None,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct VideoFecStats {
+    source_symbols: u64,
+    missing_source_symbols: u64,
+}
+
+impl VideoFecStats {
+    fn accumulate(&mut self, other: Self) {
+        self.source_symbols += other.source_symbols;
+        self.missing_source_symbols += other.missing_source_symbols;
+    }
 }
 
 #[derive(Debug)]
@@ -876,8 +911,12 @@ impl PendingGroups {
             NextPacket::None => Action::None,
             NextPacket::Deadline(instant) => Action::Deadline(instant),
             NextPacket::Ready(packet_ref) => {
+                let mut fec_stats = VideoFecStats::default();
                 if packet_ref.pending_group_index > 0 {
-                    self.pending_groups.drain(..packet_ref.pending_group_index);
+                    for pending_group in self.pending_groups.drain(..packet_ref.pending_group_index)
+                    {
+                        fec_stats.accumulate(pending_group.discarded_fec_stats());
+                    }
                 }
 
                 let pending_group = &mut self.pending_groups[0];
@@ -890,16 +929,20 @@ impl PendingGroups {
                     Action::Packet {
                         kypacket_seq: config_packet.kypacket_seq,
                         packet: config_packet.packet,
+                        fec_stats,
                     }
                 } else {
                     let datagram = pending_group
                         .datagrams
                         .pop_front()
                         .expect("Expected a pending datagram");
-                    pending_group.drop_expired_segments(datagram.kypacket_seq);
+                    fec_stats
+                        .accumulate(pending_group.drop_expired_segments(datagram.kypacket_seq));
+                    fec_stats.accumulate(datagram.fec_stats);
                     Action::Packet {
                         kypacket_seq: datagram.kypacket_seq,
                         packet: datagram.packet,
+                        fec_stats,
                     }
                 }
             }
@@ -971,12 +1014,16 @@ impl PendingGroup {
         }
     }
 
-    fn drop_expired_segments(&mut self, until_kypacket_seq: u64) {
+    fn drop_expired_segments(&mut self, until_kypacket_seq: u64) -> VideoFecStats {
         let index = self
             .segments
             .binary_search_by_key(&until_kypacket_seq, |segments| segments.kypacket_seq);
         let index = index.unwrap_or_else(|index| index);
-        self.segments.drain(..index);
+        let mut stats = VideoFecStats::default();
+        for segments in self.segments.drain(..index) {
+            stats.accumulate(segments.fec_stats());
+        }
+        stats
     }
 
     fn insert_datagram_packet(&mut self, packet: DatagramPacket) {
@@ -988,6 +1035,17 @@ impl PendingGroup {
         }
         // else it is a duplicate, ignore
     }
+
+    fn discarded_fec_stats(self) -> VideoFecStats {
+        let mut stats = VideoFecStats::default();
+        for datagram in self.datagrams {
+            stats.accumulate(datagram.fec_stats);
+        }
+        for segments in self.segments {
+            stats.accumulate(segments.fec_stats());
+        }
+        stats
+    }
 }
 
 #[derive(Debug)]
@@ -996,6 +1054,7 @@ struct DatagramSegments {
     oti: raptorq::ObjectTransmissionInformation,
     decoder: raptorq::Decoder,
     assembled: Option<Vec<u8>>,
+    received_source_symbols: HashSet<(u8, u32)>,
 }
 
 impl DatagramSegments {
@@ -1005,6 +1064,7 @@ impl DatagramSegments {
             oti,
             decoder: raptorq::Decoder::new(oti),
             assembled: None,
+            received_source_symbols: HashSet::new(),
         }
     }
 
@@ -1016,6 +1076,12 @@ impl DatagramSegments {
     ) {
         assert!(self.assembled.is_none());
         assert!(oti == self.oti);
+        if Self::is_source_symbol(&oti, &payload_id) {
+            self.received_source_symbols.insert((
+                payload_id.source_block_number(),
+                payload_id.encoding_symbol_id(),
+            ));
+        }
         let encoding_packet = raptorq::EncodingPacket::new(payload_id, data.into());
         self.assembled = self.decoder.decode(encoding_packet);
     }
@@ -1024,8 +1090,47 @@ impl DatagramSegments {
         self.assembled.is_some()
     }
 
+    fn source_symbols_for_block(
+        oti: &raptorq::ObjectTransmissionInformation,
+        source_block_number: u8,
+    ) -> u32 {
+        let source_symbols = oti.transfer_length().div_ceil(u64::from(oti.symbol_size()));
+        let source_symbols =
+            u32::try_from(source_symbols).expect("RaptorQ source-symbol count must fit in u32");
+        let (large, small, large_blocks, small_blocks) =
+            raptorq::partition(source_symbols, u32::from(oti.source_blocks()));
+        let source_block_number = u32::from(source_block_number);
+        assert!(source_block_number < large_blocks + small_blocks);
+        if source_block_number < large_blocks {
+            large
+        } else {
+            small
+        }
+    }
+
+    fn is_source_symbol(
+        oti: &raptorq::ObjectTransmissionInformation,
+        payload_id: &raptorq::PayloadId,
+    ) -> bool {
+        payload_id.encoding_symbol_id()
+            < Self::source_symbols_for_block(oti, payload_id.source_block_number())
+    }
+
+    fn fec_stats(&self) -> VideoFecStats {
+        let source_symbols = self
+            .oti
+            .transfer_length()
+            .div_ceil(u64::from(self.oti.symbol_size()));
+        let received_source_symbols = self.received_source_symbols.len() as u64;
+        VideoFecStats {
+            source_symbols,
+            missing_source_symbols: source_symbols.saturating_sub(received_source_symbols),
+        }
+    }
+
     fn assemble(self) -> DatagramPacket {
         assert!(self.is_complete());
+        let fec_stats = self.fec_stats();
         let data = self.assembled.unwrap();
 
         // TODO for now, the kypacket header is sent "as is" over datagrams.
@@ -1040,6 +1145,87 @@ impl DatagramSegments {
             packet,
             kypacket_seq: self.kypacket_seq,
             instant: Instant::now(),
+            fec_stats,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn evenly_drop_packet(index: usize, loss_percent: usize) -> bool {
+        ((index + 1) * loss_percent) / 100 != (index * loss_percent) / 100
+    }
+
+    fn run_raptorq_loss_case(loss_percent: usize) -> (bool, VideoFecStats) {
+        let data: Vec<u8> = (0..512 * 1024)
+            .map(|index| ((index * 31 + 17) & 0xff) as u8)
+            .collect();
+        let encoder = raptorq::Encoder::with_defaults(&data, 1280);
+        let oti = encoder.get_config();
+        let source_symbols = data.len().div_ceil(usize::from(oti.symbol_size()));
+        let repair_symbols = ((source_symbols as f32 * 0.3).ceil() as u32).max(2);
+        let packets = encoder.get_encoded_packets(repair_symbols);
+        let mut segments = DatagramSegments::new(7, oti);
+
+        for (index, packet) in packets.into_iter().enumerate() {
+            if evenly_drop_packet(index, loss_percent) {
+                continue;
+            }
+            let (payload_id, data) = packet.split();
+            segments.add_packet(oti, payload_id, Bytes::from(data));
+            if segments.is_complete() {
+                break;
+            }
+        }
+
+        (segments.is_complete(), segments.fec_stats())
+    }
+
+    #[test]
+    fn identifies_source_symbols_in_each_raptorq_block() {
+        let oti = raptorq::ObjectTransmissionInformation::new(10 * 1280, 1280, 3, 1, 8);
+
+        assert_eq!(DatagramSegments::source_symbols_for_block(&oti, 0), 4);
+        assert_eq!(DatagramSegments::source_symbols_for_block(&oti, 1), 3);
+        assert_eq!(DatagramSegments::source_symbols_for_block(&oti, 2), 3);
+        assert!(DatagramSegments::is_source_symbol(
+            &oti,
+            &raptorq::PayloadId::new(0, 3),
+        ));
+        assert!(!DatagramSegments::is_source_symbol(
+            &oti,
+            &raptorq::PayloadId::new(0, 4),
+        ));
+        assert!(DatagramSegments::is_source_symbol(
+            &oti,
+            &raptorq::PayloadId::new(2, 2),
+        ));
+        assert!(!DatagramSegments::is_source_symbol(
+            &oti,
+            &raptorq::PayloadId::new(2, 3),
+        ));
+    }
+
+    #[test]
+    fn raptorq_recovers_deterministic_loss_up_to_its_repair_budget() {
+        for loss_percent in [0, 5, 10, 15, 20] {
+            let (complete, stats) = run_raptorq_loss_case(loss_percent);
+            assert!(complete, "RaptorQ did not recover {loss_percent}% loss");
+            assert!(stats.source_symbols > 0);
+            let measured_percent = stats.missing_source_symbols * 100 / stats.source_symbols;
+            assert!(
+                measured_percent.abs_diff(loss_percent as u64) <= 1,
+                "reported {measured_percent}% for injected {loss_percent}% loss",
+            );
+        }
+
+        let (complete, stats) = run_raptorq_loss_case(25);
+        assert!(
+            !complete,
+            "25% loss unexpectedly fit within 30% repair overhead"
+        );
+        assert!(stats.missing_source_symbols > 0);
     }
 }

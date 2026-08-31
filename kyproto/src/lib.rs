@@ -280,6 +280,12 @@ impl types::ProtocolEndpointDriver for MetricsClientEndpointDriver {
 pub struct ProtocolStats {
     /// The number of (unreliable) packets not received or received too late
     pub dropped_packets: Option<u64>,
+    /// Original video RaptorQ source symbols represented by completed or
+    /// expired receive objects. Repair symbols are deliberately excluded.
+    pub video_fec_source_symbols: Option<u64>,
+    /// Original video RaptorQ source symbols not received before FEC recovery
+    /// completed or the receive object expired.
+    pub video_fec_source_symbols_missing: Option<u64>,
 }
 
 const INITIATOR_SERVER: u16 = 0;
