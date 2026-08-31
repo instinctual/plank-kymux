@@ -33,6 +33,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use bytes::Bytes;
 use rustls_platform_verifier::ConfigVerifierExt;
+use socket2::{Domain, Protocol, Socket, Type};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
 /// ALPN protocol identifier for Kymux protocol over standard QUIC.
@@ -121,6 +122,11 @@ impl From<quinn::Connection> for Connection {
 pub struct QuinnClientOptions {
     pub max_idle_timeout: Option<Duration>,
     pub keep_alive_interval: Option<Duration>,
+    /// Maximum complete UDP payload accepted and probed by QUIC, excluding
+    /// the outer IP and UDP headers. This allows an application to account
+    /// for an encapsulating transport whose virtual interface hides a smaller
+    /// physical datagram boundary.
+    pub max_udp_payload_size: Option<u16>,
     /// SHA-256 hash of the expected server certificate (hex encoded).
     /// If provided, the server certificate will be validated by comparing its hash
     /// instead of using CA chain validation. This is similar to WebTransport's
@@ -175,6 +181,11 @@ impl QuinnConnectionDriver {
                 .map_err(|_| ConnectionError("Invalid max_idle_timeout".to_string()))?,
         );
         transport_config.keep_alive_interval(options.keep_alive_interval);
+        if let Some(max_udp_payload_size) = options.max_udp_payload_size {
+            let mut mtu_discovery = quinn::MtuDiscoveryConfig::default();
+            mtu_discovery.upper_bound(max_udp_payload_size);
+            transport_config.mtu_discovery_config(Some(mtu_discovery));
+        }
         config.transport_config(Arc::new(transport_config));
 
         let bind_ip_addr = match &addr {
@@ -183,7 +194,32 @@ impl QuinnConnectionDriver {
         };
 
         let bind_addr = SocketAddr::new(bind_ip_addr, 0);
-        let endpoint = quinn::Endpoint::client(bind_addr)?;
+        let socket = Socket::new(
+            Domain::for_address(bind_addr),
+            Type::DGRAM,
+            Some(Protocol::UDP),
+        )?;
+        if bind_addr.is_ipv6()
+            && let Err(error) = socket.set_only_v6(false)
+        {
+            log::debug!("Unable to make QUIC client socket dual-stack: {error}");
+        }
+        socket.bind(&bind_addr.into())?;
+
+        let mut endpoint_config = quinn::EndpointConfig::default();
+        if let Some(max_udp_payload_size) = options.max_udp_payload_size {
+            endpoint_config
+                .max_udp_payload_size(max_udp_payload_size)
+                .map_err(|error| {
+                    ConnectionError(format!("Invalid maximum UDP payload size: {error}"))
+                })?;
+        }
+        let endpoint = quinn::Endpoint::new(
+            endpoint_config,
+            None,
+            socket.into(),
+            Arc::new(quinn::TokioRuntime),
+        )?;
         let conn = endpoint.connect_with(config, addr, server_name)?.await?;
         Ok(conn.into())
     }
