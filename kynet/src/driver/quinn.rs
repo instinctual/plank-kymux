@@ -26,7 +26,8 @@ use crate::{
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::pin::Pin;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 use std::time::Duration;
 
@@ -38,6 +39,129 @@ use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
 /// ALPN protocol identifier for Kymux protocol over standard QUIC.
 pub const KYMUX_ALPN: &[u8] = b"kymux";
+
+/// Quinn congestion-controller factory accepted by the generic Kynet driver.
+pub type CongestionControllerFactory =
+    Arc<dyn quinn::congestion::ControllerFactory + Send + Sync + 'static>;
+
+#[derive(Debug)]
+struct DatagramPacerState {
+    virtual_finish: tokio::time::Instant,
+}
+
+/// Optional application-side DATAGRAM pacer.
+///
+/// KyProto already awaits every `send_datagram()` call. Kynet can therefore
+/// pace submissions before they enter Quinn without changing KyProto's media
+/// packetization or FEC object model. The small burst allowance avoids a timer
+/// wakeup for every individual datagram.
+#[derive(Debug)]
+pub struct DatagramPacer {
+    target_bps: AtomicU64,
+    burst: Duration,
+    wire_overhead_bytes: usize,
+    state: Mutex<DatagramPacerState>,
+}
+
+impl DatagramPacer {
+    pub fn new(target_bps: u64, burst: Duration, wire_overhead_bytes: usize) -> Self {
+        Self {
+            target_bps: AtomicU64::new(target_bps),
+            burst,
+            wire_overhead_bytes,
+            state: Mutex::new(DatagramPacerState {
+                virtual_finish: tokio::time::Instant::now(),
+            }),
+        }
+    }
+
+    pub fn target_bps(&self) -> u64 {
+        self.target_bps.load(Ordering::Acquire)
+    }
+
+    pub fn set_target_bps(&self, target_bps: u64) {
+        self.target_bps.store(target_bps, Ordering::Release);
+        self.state.lock().unwrap().virtual_finish = tokio::time::Instant::now();
+    }
+
+    fn reserve_deadline(
+        &self,
+        payload_bytes: usize,
+        now: tokio::time::Instant,
+    ) -> Option<tokio::time::Instant> {
+        let target_bps = self.target_bps();
+        if target_bps == 0 {
+            return None;
+        }
+
+        let wire_bytes = payload_bytes.saturating_add(self.wire_overhead_bytes);
+        let serialization_nanos = (wire_bytes as u128)
+            .saturating_mul(8)
+            .saturating_mul(1_000_000_000)
+            .div_ceil(target_bps as u128)
+            .min(u64::MAX as u128) as u64;
+        let serialization = Duration::from_nanos(serialization_nanos);
+        let deadline = {
+            let mut state = self.state.lock().unwrap();
+            if state.virtual_finish < now {
+                state.virtual_finish = now;
+            }
+            state.virtual_finish += serialization;
+            state
+                .virtual_finish
+                .checked_sub(self.burst)
+                .unwrap_or(now)
+                .max(now)
+        };
+        Some(deadline)
+    }
+
+    async fn wait(&self, payload_bytes: usize) {
+        let now = tokio::time::Instant::now();
+        if let Some(deadline) = self.reserve_deadline(payload_bytes, now)
+            && deadline > now
+        {
+            tokio::time::sleep_until(deadline).await;
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::DatagramPacer;
+    use std::time::Duration;
+
+    #[test]
+    fn datagram_pacer_reserves_against_one_shared_timeline() {
+        let pacer = DatagramPacer::new(8_000_000, Duration::ZERO, 0);
+        let now = tokio::time::Instant::now();
+        let first = pacer.reserve_deadline(1_000, now).unwrap();
+        let second = pacer.reserve_deadline(1_000, now).unwrap();
+        assert_eq!(first - now, Duration::from_millis(1));
+        assert_eq!(second - now, Duration::from_millis(2));
+    }
+
+    #[test]
+    fn datagram_pacer_permits_only_the_configured_burst() {
+        let pacer = DatagramPacer::new(8_000_000, Duration::from_millis(2), 0);
+        let now = tokio::time::Instant::now();
+        assert_eq!(pacer.reserve_deadline(1_000, now), Some(now));
+        assert_eq!(pacer.reserve_deadline(1_000, now), Some(now));
+        assert_eq!(
+            pacer.reserve_deadline(1_000, now),
+            Some(now + Duration::from_millis(1))
+        );
+    }
+
+    #[test]
+    fn zero_rate_disables_pacing() {
+        let pacer = DatagramPacer::new(0, Duration::from_millis(2), 0);
+        assert_eq!(
+            pacer.reserve_deadline(64 * 1024, tokio::time::Instant::now()),
+            None
+        );
+    }
+}
 
 /// Certificate verifier that validates server certificates by comparing their SHA-256 hash.
 /// This is used for connecting to servers with self-signed certificates
@@ -114,7 +238,7 @@ impl rustls::client::danger::ServerCertVerifier for HashCertVerifier {
 
 impl From<quinn::Connection> for Connection {
     fn from(value: quinn::Connection) -> Self {
-        Self::new(QuinnConnectionDriver::wrap(value))
+        Self::new(QuinnConnectionDriver::wrap(value, None))
     }
 }
 
@@ -132,16 +256,27 @@ pub struct QuinnClientOptions {
     /// instead of using CA chain validation. This is similar to WebTransport's
     /// serverCertificateHashes option.
     pub certificate_hash: Option<String>,
+    /// Optional application-selected Quinn congestion controller.
+    pub congestion_controller_factory: Option<CongestionControllerFactory>,
+    /// Optional application-side DATAGRAM pacer shared by the connection.
+    pub datagram_pacer: Option<Arc<DatagramPacer>>,
 }
 
 #[derive(Debug)]
 pub(crate) struct QuinnConnectionDriver {
     conn: quinn::Connection,
+    datagram_pacer: Option<Arc<DatagramPacer>>,
 }
 
 impl QuinnConnectionDriver {
-    fn wrap(conn: quinn::Connection) -> Self {
-        Self { conn }
+    pub(crate) fn wrap(
+        conn: quinn::Connection,
+        datagram_pacer: Option<Arc<DatagramPacer>>,
+    ) -> Self {
+        Self {
+            conn,
+            datagram_pacer,
+        }
     }
 
     pub async fn connect(
@@ -181,6 +316,9 @@ impl QuinnConnectionDriver {
                 .map_err(|_| ConnectionError("Invalid max_idle_timeout".to_string()))?,
         );
         transport_config.keep_alive_interval(options.keep_alive_interval);
+        if let Some(factory) = &options.congestion_controller_factory {
+            transport_config.congestion_controller_factory(factory.clone());
+        }
         if let Some(max_udp_payload_size) = options.max_udp_payload_size {
             let mut mtu_discovery = quinn::MtuDiscoveryConfig::default();
             mtu_discovery.upper_bound(max_udp_payload_size);
@@ -221,7 +359,10 @@ impl QuinnConnectionDriver {
             Arc::new(quinn::TokioRuntime),
         )?;
         let conn = endpoint.connect_with(config, addr, server_name)?.await?;
-        Ok(conn.into())
+        Ok(Connection::new(Self::wrap(
+            conn,
+            options.datagram_pacer.clone(),
+        )))
     }
 }
 
@@ -265,6 +406,9 @@ impl ConnectionDriver for QuinnConnectionDriver {
     }
 
     async fn send_datagram(&self, data: Bytes) -> Result<(), SendDatagramError> {
+        if let Some(pacer) = &self.datagram_pacer {
+            pacer.wait(data.len()).await;
+        }
         self.conn.send_datagram(data)?;
         Ok(())
     }

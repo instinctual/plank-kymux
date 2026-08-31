@@ -44,7 +44,9 @@ use bytes::Bytes;
 
 #[cfg(all(feature = "kynet-quinn", not(target_family = "wasm")))]
 pub mod quinn {
-    pub use crate::driver::quinn::QuinnClientOptions;
+    pub use crate::driver::quinn::{
+        CongestionControllerFactory, DatagramPacer, QuinnClientOptions,
+    };
 }
 
 #[cfg(all(feature = "kynet-webtransport-js", target_family = "wasm"))]

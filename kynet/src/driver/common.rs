@@ -29,18 +29,21 @@ use std::time::Duration;
 use async_trait::async_trait;
 use socket2::{Domain, Protocol, Socket, Type};
 
-use super::quinn::KYMUX_ALPN;
+use super::quinn::{CongestionControllerFactory, DatagramPacer, KYMUX_ALPN, QuinnConnectionDriver};
 
 #[derive(Default)]
 pub struct CommonServerOptions {
     pub max_idle_timeout: Option<Duration>,
     pub keep_alive_interval: Option<Duration>,
+    pub congestion_controller_factory: Option<CongestionControllerFactory>,
+    pub datagram_pacer: Option<Arc<DatagramPacer>>,
 }
 
 /// Common server that accepts both QUIC (Kymux) and WebTransport connections
 /// on the same port, dispatching based on negotiated ALPN.
 pub struct CommonServer {
     quinn_endpoint: Arc<quinn::Endpoint>,
+    datagram_pacer: Option<Arc<DatagramPacer>>,
 }
 
 impl CommonServer {
@@ -79,6 +82,9 @@ impl CommonServer {
                 .map_err(|_| ConnectionError("Invalid max_idle_timeout".to_string()))?,
         );
         transport_config.keep_alive_interval(options.keep_alive_interval);
+        if let Some(factory) = &options.congestion_controller_factory {
+            transport_config.congestion_controller_factory(factory.clone());
+        }
         server_config.transport_config(Arc::new(transport_config));
 
         // Create UDP socket with dual-stack support when binding to IPv6.
@@ -112,6 +118,7 @@ impl CommonServer {
 
         Ok(Self {
             quinn_endpoint: Arc::new(quinn_endpoint),
+            datagram_pacer: options.datagram_pacer.clone(),
         })
     }
 
@@ -172,7 +179,10 @@ impl super::Server for CommonServer {
         let quinn_connection = quinn_connecting
             .await
             .map_err(|e| ConnectionError(format!("Connection failed: {:?}", e)))?;
-        Ok(Some(quinn_connection.into()))
+        Ok(Some(Connection::new(QuinnConnectionDriver::wrap(
+            quinn_connection,
+            self.datagram_pacer.clone(),
+        ))))
     }
 
     fn close(&self, error_code: u32, reason: &str) {
