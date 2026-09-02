@@ -3,6 +3,9 @@ name = "kymux-util"
 version = "0.1.0"
 edition = { workspace = true }
 
+[lints]
+workspace = true
+
 [dependencies]
 thiserror = "2.0"
 tokio = "1.36"

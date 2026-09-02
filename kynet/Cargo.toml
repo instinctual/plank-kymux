@@ -8,6 +8,9 @@ edition = { workspace = true }
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[lints]
+workspace = true
+
 [dependencies]
 async-trait = "0.1.78"
 bytes = "1.5.0"

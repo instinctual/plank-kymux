@@ -9,6 +9,9 @@ edition = { workspace = true }
 crate-type = ["cdylib", "rlib"]
 doctest = false
 
+[lints]
+workspace = true
+
 [dependencies]
 async-trait = "0.1.73"
 byteorder = "1.4.3"

@@ -3,6 +3,9 @@ name = "kymux-types"
 version = "0.1.0"
 edition = { workspace = true }
 
+[lints]
+workspace = true
+
 [dependencies]
 async-trait = "0.1.73"
 byteorder = "1.4.3"

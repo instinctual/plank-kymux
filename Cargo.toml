@@ -11,3 +11,6 @@ members = [
     "kyproto",
     "kywebsocket",
 ]
+
+[workspace.lints.clippy]
+unused_async = "warn"

@@ -3,6 +3,9 @@ name = "kymux"
 version = "0.1.0"
 edition = { workspace = true }
 
+[lints]
+workspace = true
+
 [dependencies]
 kycom = { path = "../kycom", optional = true }
 kymux-types = { path = "../kymux-types" }
