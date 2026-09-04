@@ -31,6 +31,9 @@ use rustls_platform_verifier::ConfigVerifierExt;
 use tokio::net::TcpStream;
 use tokio_tungstenite::tungstenite;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+pub use tokio_tungstenite::tungstenite::http::{HeaderMap, HeaderName, HeaderValue};
+
+pub use tokio_tungstenite::tungstenite::http::header::COOKIE;
 
 #[derive(Debug)]
 pub enum TlsConfig {
@@ -39,8 +42,15 @@ pub enum TlsConfig {
     Custom(rustls::ClientConfig),
 }
 
-pub async fn connect(url: &str, tls_config: TlsConfig) -> io::Result<Connection> {
-    let request = url.into_client_request().map_err(tungstenite_to_io_error)?;
+pub async fn connect(
+    url: &str,
+    tls_config: TlsConfig,
+    headers: HeaderMap,
+) -> io::Result<Connection> {
+    let mut request = url.into_client_request().map_err(tungstenite_to_io_error)?;
+
+    request.headers_mut().extend(headers);
+
     let uri = request.uri();
     let host = uri
         .host()

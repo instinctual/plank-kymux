@@ -35,7 +35,7 @@ use std::io::Result;
 
 #[cfg(feature = "kywebsocket-tungstenite")]
 pub mod tungstenite {
-    pub use crate::driver::tungstenite::TlsConfig;
+    pub use crate::driver::tungstenite::{HeaderMap, HeaderName, HeaderValue, TlsConfig, COOKIE};
 }
 
 #[derive(Debug)]
@@ -59,8 +59,9 @@ impl Connection {
     pub async fn tungstenite_connect(
         url: &str,
         tls_config: tungstenite::TlsConfig,
+        headers: tungstenite::HeaderMap,
     ) -> Result<Self> {
-        driver::tungstenite::connect(url, tls_config).await
+        driver::tungstenite::connect(url, tls_config, headers).await
     }
 
     pub async fn close(self) {
