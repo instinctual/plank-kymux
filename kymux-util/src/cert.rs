@@ -29,7 +29,11 @@ pub struct HashCertVerifier {
 }
 
 impl HashCertVerifier {
-    pub fn new(expected_hash_hex: &str) -> io::Result<Self> {
+    pub fn new(expected_hash: Vec<u8>) -> Self {
+        Self { expected_hash }
+    }
+
+    pub fn new_from_hex(expected_hash_hex: &str) -> io::Result<Self> {
         let expected_hash = hex::decode(expected_hash_hex)
             .map_err(|_| io::Error::other("Invalid certificate hash hex string".to_string()))?;
         Ok(Self { expected_hash })

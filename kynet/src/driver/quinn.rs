@@ -124,7 +124,7 @@ impl QuinnConnectionDriver {
         options: &QuinnClientOptions,
     ) -> Result<Connection, ConnectionError> {
         let mut tls_config = if let Some(ref hash) = options.certificate_hash {
-            let verifier = kymux_util::cert::HashCertVerifier::new(hash)?;
+            let verifier = kymux_util::cert::HashCertVerifier::new_from_hex(hash)?;
             rustls::ClientConfig::builder()
                 .dangerous()
                 .with_custom_certificate_verifier(Arc::new(verifier))
