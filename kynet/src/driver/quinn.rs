@@ -82,79 +82,6 @@ mod tests {
     }
 }
 
-/// Certificate verifier that validates server certificates by comparing their SHA-256 hash.
-/// This is used for connecting to servers with self-signed certificates
-/// where the expected hash is provided out-of-band (similar to WebTransport's serverCertificateHashes).
-#[derive(Debug)]
-struct HashCertVerifier {
-    expected_hash: Vec<u8>,
-}
-
-impl HashCertVerifier {
-    fn new(expected_hash_hex: &str) -> Result<Self, ConnectionError> {
-        let expected_hash = hex::decode(expected_hash_hex)
-            .map_err(|_| ConnectionError("Invalid certificate hash hex string".to_string()))?;
-        Ok(Self { expected_hash })
-    }
-}
-
-impl rustls::client::danger::ServerCertVerifier for HashCertVerifier {
-    fn verify_server_cert(
-        &self,
-        end_entity: &rustls::pki_types::CertificateDer<'_>,
-        _intermediates: &[rustls::pki_types::CertificateDer<'_>],
-        _server_name: &rustls::pki_types::ServerName<'_>,
-        _ocsp_response: &[u8],
-        _now: rustls::pki_types::UnixTime,
-    ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
-        use ring::digest::{SHA256, digest};
-        let actual_hash = digest(&SHA256, end_entity.as_ref());
-        if actual_hash.as_ref() == self.expected_hash.as_slice() {
-            Ok(rustls::client::danger::ServerCertVerified::assertion())
-        } else {
-            Err(rustls::Error::General(format!(
-                "Certificate hash mismatch. Expected: {}, Got: {}",
-                hex::encode(&self.expected_hash),
-                hex::encode(actual_hash.as_ref())
-            )))
-        }
-    }
-
-    fn verify_tls12_signature(
-        &self,
-        message: &[u8],
-        cert: &rustls::pki_types::CertificateDer<'_>,
-        dss: &rustls::DigitallySignedStruct,
-    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-        rustls::crypto::verify_tls12_signature(
-            message,
-            cert,
-            dss,
-            &rustls::crypto::ring::default_provider().signature_verification_algorithms,
-        )
-    }
-
-    fn verify_tls13_signature(
-        &self,
-        message: &[u8],
-        cert: &rustls::pki_types::CertificateDer<'_>,
-        dss: &rustls::DigitallySignedStruct,
-    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-        rustls::crypto::verify_tls13_signature(
-            message,
-            cert,
-            dss,
-            &rustls::crypto::ring::default_provider().signature_verification_algorithms,
-        )
-    }
-
-    fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
-        rustls::crypto::ring::default_provider()
-            .signature_verification_algorithms
-            .supported_schemes()
-    }
-}
-
 impl From<quinn::Connection> for Connection {
     fn from(value: quinn::Connection) -> Self {
         Self::new(QuinnConnectionDriver::wrap(value))
@@ -197,7 +124,7 @@ impl QuinnConnectionDriver {
         options: &QuinnClientOptions,
     ) -> Result<Connection, ConnectionError> {
         let mut tls_config = if let Some(ref hash) = options.certificate_hash {
-            let verifier = HashCertVerifier::new(hash)?;
+            let verifier = kymux_util::cert::HashCertVerifier::new(hash)?;
             rustls::ClientConfig::builder()
                 .dangerous()
                 .with_custom_certificate_verifier(Arc::new(verifier))

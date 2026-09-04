@@ -20,6 +20,9 @@
 
 // Utils to be able to use Rc/RefCell on wasm and Arc/Mutex on other platforms.
 
+#[cfg(feature = "cert")]
+pub mod cert;
+
 use std::ops::{Deref, DerefMut};
 use thiserror::Error;
 use tokio::io::{AsyncRead, AsyncWrite};
