@@ -40,3 +40,4 @@ kywasmtime = { git = "https://github.com/rom1v/kywasmtime.git", tag = "0.1" }
 # https://doc.rust-lang.org/cargo/reference/features.html#optional-dependencies
 [features]
 sender-timing = ["kynet/sender-timing"]
+source-first-fec = ["sender-timing"]
