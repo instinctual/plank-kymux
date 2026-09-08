@@ -434,6 +434,11 @@ impl KyChannel {
         KyChannelSend::send_datagram_(&self.conn, data).await
     }
 
+    #[cfg(feature = "datagram-batch")]
+    pub async fn send_datagram_batch(&self, packets: Vec<Bytes>) -> Result<(), SendDatagramError> {
+        self.conn.send_datagram_batch(packets).await
+    }
+
     pub async fn recv_datagram(&mut self) -> Result<Bytes, RouterError> {
         KyChannelRecv::recv_(&mut self.rx_datagrams).await
     }

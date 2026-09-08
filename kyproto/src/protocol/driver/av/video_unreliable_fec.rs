@@ -413,9 +413,7 @@ impl VideoUnreliableFecProtocolSendDriver {
         let oti = config.serialize();
         // All original symbols leave before matrix solving/repair generation.
         // Packet IDs, OTI, repair count and repair bytes remain unchanged.
-        for source in sources {
-            self.send_fec_packet(oti, source).await?;
-        }
+        self.send_fec_packets(oti, sources).await?;
         let prepare = std::time::Instant::now();
         let encoder = raptorq::Encoder::new(data, config);
         if timing.is_some() {
@@ -427,9 +425,7 @@ impl VideoUnreliableFecProtocolSendDriver {
             if timing.is_some() {
                 kynet::sender_timing::update(|m| m.fec_repair_ns += kynet::sender_timing::ns(prepare.elapsed()));
             }
-            for packet in packets {
-                self.send_fec_packet(oti, packet).await?;
-            }
+            self.send_fec_packets(oti, packets).await?;
         }
         if let Some(start) = timing {
             kynet::sender_timing::update(|m| m.fec_total_ns += kynet::sender_timing::ns(start.elapsed()));
@@ -438,7 +434,28 @@ impl VideoUnreliableFecProtocolSendDriver {
     }
 
     #[cfg(feature = "source-first-fec")]
-    async fn send_fec_packet(&self, oti: [u8; 12], packet: raptorq::EncodingPacket) -> Result<(), ProtocolError> {
+    async fn send_fec_packets(&self, oti: [u8; 12], packets: Vec<raptorq::EncodingPacket>) -> Result<(), ProtocolError> {
+        #[cfg(feature = "datagram-batch")]
+        if cfg!(target_os = "macos") {
+            let mut packets = packets.into_iter();
+            loop {
+                // These packets already exist. Never wait for more, combine
+                // payloads, or hold Quinn's lock while preparing headers.
+                let batch: Vec<_> = packets.by_ref().take(16)
+                    .map(|packet| self.fec_datagram(oti, packet)).collect();
+                if batch.is_empty() { break; }
+                self.ky_channel.send_datagram_batch(batch).await.map_err(ProtocolError::new)?;
+            }
+            return Ok(());
+        }
+        for packet in packets {
+            self.ky_channel.send_datagram(self.fec_datagram(oti, packet)).await.map_err(ProtocolError::new)?;
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "source-first-fec")]
+    fn fec_datagram(&self, oti: [u8; 12], packet: raptorq::EncodingPacket) -> bytes::Bytes {
         let (id, data) = packet.split();
         let mut buf = BytesMut::with_capacity(DATAGRAM_HEADER_SIZE + data.len());
         self.ky_channel.write_datagram_header(&mut buf);
@@ -447,7 +464,7 @@ impl VideoUnreliableFecProtocolSendDriver {
         buf.put_slice(&oti);
         buf.put_slice(&id.serialize());
         buf.put_slice(&data);
-        self.ky_channel.send_datagram(buf.freeze()).await.map_err(ProtocolError::new)
+        buf.freeze()
     }
 }
 

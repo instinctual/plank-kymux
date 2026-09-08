@@ -60,6 +60,12 @@ pub trait ConnectionDriver: Debug + KySend + KySync {
 
     async fn send_datagram(&self, data: Bytes) -> Result<(), SendDatagramError>;
 
+    #[cfg(feature = "datagram-batch")]
+    async fn send_datagram_batch(&self, packets: Vec<Bytes>) -> Result<(), SendDatagramError> {
+        for packet in packets { self.send_datagram(packet).await?; }
+        Ok(())
+    }
+
     async fn closed(&self) -> Result<(), ConnectionError>;
 
     fn close(&self, error_code: u32, reason: &str);

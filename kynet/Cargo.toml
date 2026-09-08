@@ -54,6 +54,7 @@ web-sys = { version = "=0.3.77", optional = true, features = [
 # https://doc.rust-lang.org/cargo/reference/features.html#optional-dependencies
 [features]
 sender-timing = []
+datagram-batch = ["sender-timing", "quinn?/plank-datagram-batch"]
 kynet-quinn = [
     "dep:hex",
     "dep:quinn",
