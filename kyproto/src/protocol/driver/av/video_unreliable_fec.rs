@@ -441,7 +441,7 @@ impl VideoUnreliableFecProtocolSendDriver {
             loop {
                 // These packets already exist. Never wait for more, combine
                 // payloads, or hold Quinn's lock while preparing headers.
-                let batch: Vec<_> = packets.by_ref().take(16)
+                let batch: Vec<_> = packets.by_ref().take(4)
                     .map(|packet| self.fec_datagram(oti, packet)).collect();
                 if batch.is_empty() { break; }
                 self.ky_channel.send_datagram_batch(batch).await.map_err(ProtocolError::new)?;
