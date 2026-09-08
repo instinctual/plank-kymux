@@ -72,6 +72,8 @@ pub use crate::driver::Server;
 pub mod cert;
 
 mod driver;
+#[cfg(feature = "sender-timing")]
+pub mod sender_timing;
 pub mod error;
 
 pub fn init_crypto() {

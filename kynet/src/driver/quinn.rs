@@ -121,6 +121,11 @@ impl DatagramPacer {
         if let Some(deadline) = self.reserve_deadline(payload_bytes, now)
             && deadline > now
         {
+            #[cfg(feature = "sender-timing")]
+            crate::sender_timing::update(|m| {
+                m.sleeps += 1;
+                m.sleep_requested_ns += crate::sender_timing::ns(deadline - now);
+            });
             tokio::time::sleep_until(deadline).await;
         }
     }
@@ -408,10 +413,28 @@ impl ConnectionDriver for QuinnConnectionDriver {
     }
 
     async fn send_datagram(&self, data: Bytes) -> Result<(), SendDatagramError> {
+        #[cfg(feature = "sender-timing")]
+        let timing = crate::sender_timing::active().then(std::time::Instant::now);
+        #[cfg(feature = "sender-timing")]
+        let bytes = data.len();
         if let Some(pacer) = &self.datagram_pacer {
             pacer.wait(data.len()).await;
         }
-        self.conn.send_datagram(data)?;
+        #[cfg(feature = "sender-timing")]
+        let submit = timing.map(|_| std::time::Instant::now());
+        let result = self.conn.send_datagram(data);
+        #[cfg(feature = "sender-timing")]
+        if let (Some(start), Some(submit)) = (timing, submit) {
+            let elapsed = crate::sender_timing::ns(submit.elapsed());
+            crate::sender_timing::update(|m| {
+                m.pacer_ns += crate::sender_timing::ns(submit - start);
+                m.quinn_ns += elapsed;
+                m.quinn_max_ns = m.quinn_max_ns.max(elapsed);
+                m.datagrams += 1;
+                m.datagram_bytes += bytes as u64;
+            });
+        }
+        result?;
         Ok(())
     }
 

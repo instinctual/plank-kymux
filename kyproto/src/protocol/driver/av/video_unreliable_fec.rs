@@ -320,6 +320,8 @@ impl VideoUnreliableFecProtocolSendDriver {
     }
 
     async fn send_datagrams(&mut self, packet: MediaPacket) -> Result<(), ProtocolError> {
+        #[cfg(feature = "sender-timing")]
+        let timing = kynet::sender_timing::active().then(std::time::Instant::now);
         let max_datagram_size = self
             .ky_channel
             .max_datagram_size()
@@ -337,7 +339,11 @@ impl VideoUnreliableFecProtocolSendDriver {
         data.put(&header[..]);
         data.put(&packet.payload[..]);
 
+        #[cfg(feature = "sender-timing")]
+        let copied = timing.map(|_| std::time::Instant::now());
         let encoder = raptorq::Encoder::with_defaults(&data, max_payload_size);
+        #[cfg(feature = "sender-timing")]
+        let initialized = timing.map(|_| std::time::Instant::now());
         let oti = encoder.get_config();
         let symbol_size = oti.symbol_size() as usize;
 
@@ -348,7 +354,16 @@ impl VideoUnreliableFecProtocolSendDriver {
 
         let oti = oti.serialize();
 
-        for encoded_packet in encoder.get_encoded_packets(repair_symbols).into_iter() {
+        let encoded_packets = encoder.get_encoded_packets(repair_symbols);
+        #[cfg(feature = "sender-timing")]
+        if let (Some(start), Some(copied), Some(initialized)) = (timing, copied, initialized) {
+            kynet::sender_timing::update(|m| {
+                m.fec_copy_ns += kynet::sender_timing::ns(copied - start);
+                m.fec_encoder_ns += kynet::sender_timing::ns(initialized - copied);
+                m.fec_repair_ns += kynet::sender_timing::ns(initialized.elapsed());
+            });
+        }
+        for encoded_packet in encoded_packets.into_iter() {
             let kypacket_seq = self.kypacket_seq;
             let group_seq = self.group_seq;
 
@@ -370,6 +385,10 @@ impl VideoUnreliableFecProtocolSendDriver {
                 .map_err(ProtocolError::new)?;
         }
 
+        #[cfg(feature = "sender-timing")]
+        if let Some(start) = timing {
+            kynet::sender_timing::update(|m| m.fec_total_ns += kynet::sender_timing::ns(start.elapsed()));
+        }
         Ok(())
     }
 }
