@@ -167,11 +167,6 @@ impl Connection {
         self.driver.send_datagram(data).await
     }
 
-    #[cfg(feature = "datagram-batch")]
-    pub async fn send_datagram_batch(&self, packets: Vec<Bytes>) -> Result<(), SendDatagramError> {
-        self.driver.send_datagram_batch(packets).await
-    }
-
     pub async fn closed(&self) -> Result<(), ConnectionError> {
         self.driver.closed().await
     }

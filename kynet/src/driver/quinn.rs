@@ -438,32 +438,6 @@ impl ConnectionDriver for QuinnConnectionDriver {
         Ok(())
     }
 
-    #[cfg(feature = "datagram-batch")]
-    async fn send_datagram_batch(&self, packets: Vec<Bytes>) -> Result<(), SendDatagramError> {
-        // An enabled pacer still owns per-packet reservations. Only the
-        // explicitly unpaced experiment uses the batched Quinn API.
-        if self.datagram_pacer.is_some() {
-            for packet in packets { self.send_datagram(packet).await?; }
-            return Ok(());
-        }
-        let timing = crate::sender_timing::active().then(std::time::Instant::now);
-        let bytes: usize = packets.iter().map(Bytes::len).sum();
-        let result = self.conn.send_datagram_batch(&packets);
-        if let Some(start) = timing {
-            let elapsed = crate::sender_timing::ns(start.elapsed());
-            crate::sender_timing::update(|m| {
-                m.quinn_ns += elapsed;
-                // With batching this maximum is per submission group, not
-                // per packet; do not compare it directly to the old maximum.
-                m.quinn_max_ns = m.quinn_max_ns.max(elapsed);
-                m.datagrams += packets.len() as u64;
-                m.datagram_bytes += bytes as u64;
-            });
-        }
-        result?;
-        Ok(())
-    }
-
     async fn closed(&self) -> Result<(), ConnectionError> {
         match self.conn.closed().await {
             quinn::ConnectionError::LocallyClosed

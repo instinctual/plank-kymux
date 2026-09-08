@@ -41,4 +41,3 @@ kywasmtime = { git = "https://github.com/rom1v/kywasmtime.git", tag = "0.1" }
 [features]
 sender-timing = ["kynet/sender-timing"]
 source-first-fec = ["sender-timing"]
-datagram-batch = ["source-first-fec", "kynet/datagram-batch"]
