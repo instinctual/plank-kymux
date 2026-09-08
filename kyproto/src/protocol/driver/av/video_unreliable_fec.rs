@@ -725,6 +725,10 @@ impl VideoUnreliableFecProtocolRecvDriver {
                                 .unwrap_or_default()
                                 + fec_stats.missing_source_symbols,
                         );
+                        protocol_stats.video_fec_source_symbols_unrecovered = Some(
+                            protocol_stats.video_fec_source_symbols_unrecovered.unwrap_or_default()
+                                + fec_stats.unrecovered_source_symbols,
+                        );
                     }
                     if kypacket_seq > next_kypacket_seq {
                         let missing_packets = kypacket_seq - next_kypacket_seq;
@@ -819,12 +823,14 @@ enum Action {
 struct VideoFecStats {
     source_symbols: u64,
     missing_source_symbols: u64,
+    unrecovered_source_symbols: u64,
 }
 
 impl VideoFecStats {
     fn accumulate(&mut self, other: Self) {
         self.source_symbols += other.source_symbols;
         self.missing_source_symbols += other.missing_source_symbols;
+        self.unrecovered_source_symbols += other.unrecovered_source_symbols;
     }
 }
 
@@ -1199,9 +1205,14 @@ impl DatagramSegments {
             .transfer_length()
             .div_ceil(u64::from(self.oti.symbol_size()));
         let received_source_symbols = self.received_source_symbols.len() as u64;
+        let missing_source_symbols = source_symbols.saturating_sub(received_source_symbols);
         VideoFecStats {
             source_symbols,
-            missing_source_symbols: source_symbols.saturating_sub(received_source_symbols),
+            missing_source_symbols,
+            // Count only missing originals, never repair packets or all packets
+            // in a failed object. An object reconstructed by RaptorQ has no
+            // residual loss regardless of how many originals arrived.
+            unrecovered_source_symbols: if self.is_complete() { 0 } else { missing_source_symbols },
         }
     }
 
@@ -1286,11 +1297,48 @@ mod tests {
     }
 
     #[test]
+    fn expired_originals_are_counted_once_and_duplicates_do_not_hide_loss() {
+        let data = vec![17; 1280 * 20];
+        let encoder = raptorq::Encoder::with_defaults(&data, 1280);
+        let oti = encoder.get_config();
+        let packet = encoder.get_encoded_packets(0).remove(0);
+        let (id, bytes) = packet.split();
+        let mut group = PendingGroup::new(1);
+        for _ in 0..3 {
+            group.insert_datagram(7, oti, id.clone(), Bytes::copy_from_slice(&bytes));
+        }
+        assert_eq!(group.drop_expired_segments(7).source_symbols, 0);
+        let expired = group.drop_expired_segments(8);
+        assert_eq!(expired.source_symbols, 20);
+        assert_eq!(expired.missing_source_symbols, 19);
+        assert_eq!(expired.unrecovered_source_symbols, 19);
+        assert_eq!(group.drop_expired_segments(9).source_symbols, 0);
+        assert_eq!(group.discarded_fec_stats().unrecovered_source_symbols, 0);
+    }
+
+    #[test]
+    fn retiring_group_counts_incomplete_objects_without_inventing_wholly_missing_ones() {
+        let data = vec![23; 1280 * 20];
+        let encoder = raptorq::Encoder::with_defaults(&data, 1280);
+        let oti = encoder.get_config();
+        let mut group = PendingGroup::new(1);
+        for packet in encoder.get_encoded_packets(0).into_iter().take(5) {
+            let (id, bytes) = packet.split();
+            group.insert_datagram(42, oti, id, Bytes::from(bytes));
+        }
+        let stats = group.discarded_fec_stats();
+        assert_eq!(stats.source_symbols, 20); // No guessed sizes for sequence gaps.
+        assert_eq!(stats.missing_source_symbols, 15);
+        assert_eq!(stats.unrecovered_source_symbols, 15);
+    }
+
+    #[test]
     fn raptorq_recovers_deterministic_loss_up_to_its_repair_budget() {
         for loss_percent in [0, 5, 10, 15, 20] {
             let (complete, stats) = run_raptorq_loss_case(loss_percent);
             assert!(complete, "RaptorQ did not recover {loss_percent}% loss");
             assert!(stats.source_symbols > 0);
+            assert_eq!(stats.unrecovered_source_symbols, 0);
             let measured_percent = stats.missing_source_symbols * 100 / stats.source_symbols;
             assert!(
                 measured_percent.abs_diff(loss_percent as u64) <= 1,
@@ -1304,5 +1352,6 @@ mod tests {
             "25% loss unexpectedly fit within 30% repair overhead"
         );
         assert!(stats.missing_source_symbols > 0);
+        assert_eq!(stats.unrecovered_source_symbols, stats.missing_source_symbols);
     }
 }

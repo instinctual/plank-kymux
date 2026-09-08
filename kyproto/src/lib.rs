@@ -286,6 +286,9 @@ pub struct ProtocolStats {
     /// Original video RaptorQ source symbols not received before FEC recovery
     /// completed or the receive object expired.
     pub video_fec_source_symbols_missing: Option<u64>,
+    /// Missing source symbols in objects that expired without reconstruction.
+    /// Recovered objects contribute zero; this is not a video-frame gap count.
+    pub video_fec_source_symbols_unrecovered: Option<u64>,
 }
 
 const INITIATOR_SERVER: u16 = 0;
