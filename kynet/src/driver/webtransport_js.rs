@@ -471,6 +471,7 @@ struct ReaderData {
 enum ReaderState {
     Idle(ReaderData),
     Running(ReadFuture),
+    Done,
     Invalid,
 }
 
@@ -479,6 +480,7 @@ impl std::fmt::Debug for ReaderState {
         match self {
             ReaderState::Idle(data) => f.debug_tuple("Idle").field(&data.buf.len()).finish(),
             ReaderState::Running(_) => f.write_str("Running"),
+            ReaderState::Done => f.write_str("Done"),
             ReaderState::Invalid => f.write_str("Invalid"),
         }
     }
@@ -539,6 +541,8 @@ impl AsyncRead for WebTransportJSRecvStreamDriver {
                     self.state = ReaderState::Running(ReadFuture::new(data));
                 }
                 ReaderState::Running(mut fut) => match Pin::new(&mut fut).poll(cx) {
+                    // We reached EOF
+                    Poll::Ready(Ok(true)) => self.state = ReaderState::Done,
                     Poll::Ready(res) => {
                         // Report if the last operation failed or start again
                         self.state = ReaderState::Idle(fut.data);
@@ -550,6 +554,7 @@ impl AsyncRead for WebTransportJSRecvStreamDriver {
                         return Poll::Pending;
                     }
                 },
+                ReaderState::Done => return Poll::Ready(Ok(())),
                 ReaderState::Invalid => unreachable!(),
             }
         }
@@ -565,8 +570,12 @@ impl ReadFuture {
     fn new(data: ReaderData) -> Self {
         Self { data, fut: None }
     }
+}
 
-    fn poll_internal(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<usize>> {
+impl Future for ReadFuture {
+    type Output = std::io::Result<bool>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = Pin::into_inner(self);
 
         let fut = this.fut.get_or_insert_with(|| {
@@ -584,7 +593,7 @@ impl ReadFuture {
             .as_bool()
             .unwrap_or(false);
         if done {
-            return Poll::Ready(Ok(0));
+            return Poll::Ready(Ok(true));
         }
 
         let array = js_sys::Reflect::get(&obj, &JsValue::from("value"))
@@ -593,23 +602,11 @@ impl ReadFuture {
             .expect("Unexpected read value");
 
         let len = array.byte_length() as usize;
-        // The array is initially created with a length of data.buf.len()
-        array.copy_to(&mut this.data.buf[..len]);
 
-        Poll::Ready(Ok(len))
-    }
-}
+        this.data.buf.truncate(len);
+        array.copy_to(&mut this.data.buf);
 
-impl Future for ReadFuture {
-    type Output = std::io::Result<usize>;
-
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let res = std::task::ready!(self.as_mut().poll_internal(cx));
-        match res {
-            Ok(n) => self.data.buf.truncate(n),
-            Err(_) => self.data.buf.clear(),
-        }
-        Poll::Ready(res)
+        Poll::Ready(Ok(false))
     }
 }
 
