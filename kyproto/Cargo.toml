@@ -17,7 +17,7 @@ kymux-types = { path = "../kymux-types" }
 kynet = { path = "../kynet" }
 kymux-util = { path = "../kymux-util" }
 log = "0.4.20"
-raptorq = "1.7.0"
+raptorq = "2.0.1"
 rmp-serde = "1.1.2"
 serde = { version = "1.0.188", features = ["derive"] }
 thiserror = "2.0"
