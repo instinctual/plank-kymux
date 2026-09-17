@@ -1,0 +1,15 @@
+# This workspace is consumed by PLANK's locked transport build.
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    # PLANK carries required quinn-proto repairs; qualify a paired upgrade.
+    ignore:
+      - dependency-name: quinn
+      - dependency-name: quinn-proto
+    commit-message:
+      prefix: deps
