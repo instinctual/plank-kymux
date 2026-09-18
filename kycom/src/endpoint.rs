@@ -111,7 +111,9 @@ impl<T: types::Serializable> types::ProtocolEndpointDriver
 
     async fn ready_boxed(mut self: Box<Self>) -> Result<Self::Protocol, ProtocolError> {
         let connection = self.channel.ready().await.map_err(ProtocolError::new)?;
-        Ok(ipc::create_recv_protocol(connection.read))
+        // Keep both halves: Windows doesn't handle half-close properly (it resets the
+        // connection after ~2 minutes of silence), so we can't drop the unused write half.
+        Ok(ipc::create_recv_protocol(connection))
     }
 }
 
@@ -123,7 +125,8 @@ impl<T: types::Serializable> types::ProtocolEndpointDriver
 
     async fn ready_boxed(mut self: Box<Self>) -> Result<Self::Protocol, ProtocolError> {
         let connection = self.channel.ready().await.map_err(ProtocolError::new)?;
-        Ok(ipc::create_send_protocol(connection.write))
+        // Keep both halves (see recv impl above) rather than dropping the unused read half.
+        Ok(ipc::create_send_protocol(connection))
     }
 }
 
