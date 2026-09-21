@@ -457,6 +457,9 @@ impl ConnectionDriver for QuinnConnectionDriver {
 
     async fn stats(&self) -> ConnectionStats {
         let stats = self.conn.stats();
+        // Quinn's connection guard has been dropped before any logging work.
+        #[cfg(feature = "quinn-telemetry")]
+        super::quinn_telemetry::record(stats);
         ConnectionStats {
             rtt: Some(stats.path.rtt),
             packets_lost: Some(stats.path.lost_packets),
