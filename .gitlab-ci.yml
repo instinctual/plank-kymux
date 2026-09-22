@@ -1,8 +1,8 @@
 variables:
   GIT_SUBMODULE_STRATEGY: recursive
-  DEBIAN_IMAGE: ${CI_REGISTRY}/${ROOT_NAMESPACE}/ops/docker-images/debian-trixie:1708fd23b028cc9369b568f9ff976a84f7c869c2
-  WASM_IMAGE: ${CI_REGISTRY}/${ROOT_NAMESPACE}/ops/docker-images/debian-wasm:1708fd23b028cc9369b568f9ff976a84f7c869c2
-  WIN64_IMAGE: ${CI_REGISTRY}/${ROOT_NAMESPACE}/ops/docker-images/debian-win64:1708fd23b028cc9369b568f9ff976a84f7c869c2
+  DEBIAN_IMAGE: ${CI_REGISTRY}/${ROOT_NAMESPACE}/ops/docker-images/debian-trixie:82eefa1cd6bf2f1365708bbf980f6b667898b20a
+  WASM_IMAGE: ${CI_REGISTRY}/${ROOT_NAMESPACE}/ops/docker-images/debian-wasm:705aa5ac0fba2133ef5cb00d1106b57cca9ad043
+  WIN64_IMAGE: ${CI_REGISTRY}/${ROOT_NAMESPACE}/ops/docker-images/debian-win64:a3d1e282885b1ef5fd5fdbbf7a7d8e0b3a33de15
   MACOS_RUST_VERSION: 1.89.0
   DESKTOP_FEATURES: backend-quinn,backend-wtransport,backend-actix-ws,ipc
   WEB_FEATURES: backend-webtransport-js,backend-websocket-js
