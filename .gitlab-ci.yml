@@ -35,7 +35,7 @@ lint:
     - cargo fmt -- --check
   cache: []
 
-build-debian-bookworm-x86_64:
+build-debian-trixie-x86_64:
   stage: build
   image: $DEBIAN_IMAGE
   tags:
@@ -49,7 +49,7 @@ build-debian-bookworm-x86_64:
       --examples \
       --features $DESKTOP_FEATURES
 
-test-debian-bookworm-x86_64:
+test-debian-trixie-x86_64:
   stage: test
   image: $DEBIAN_IMAGE
   tags:
@@ -59,13 +59,13 @@ test-debian-bookworm-x86_64:
     - merge_requests
     - tags
   needs:
-    - build-debian-bookworm-x86_64
+    - build-debian-trixie-x86_64
   script: |
     cargo test \
       --release \
       --features $DESKTOP_FEATURES
 
-clippy-debian-bookworm-x86_64:
+clippy-debian-trixie-x86_64:
   stage: misc
   image: $DEBIAN_IMAGE
   tags:
@@ -75,7 +75,7 @@ clippy-debian-bookworm-x86_64:
     - merge_requests
     - tags
   needs:
-    - build-debian-bookworm-x86_64
+    - build-debian-trixie-x86_64
   script: |
     cargo clippy \
       --features $DESKTOP_FEATURES \
