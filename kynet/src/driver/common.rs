@@ -29,7 +29,9 @@ use std::time::Duration;
 use async_trait::async_trait;
 use socket2::{Domain, Protocol, Socket, Type};
 
-use super::quinn::{CongestionControllerFactory, DatagramPacer, KYMUX_ALPN, QuinnConnectionDriver};
+use super::quinn::{
+    CongestionControllerFactory, KYMUX_ALPN, QuinnConnectionDriver, handshake_error,
+};
 
 #[derive(Default)]
 pub struct CommonServerOptions {
@@ -40,14 +42,12 @@ pub struct CommonServerOptions {
     /// client-side contract.
     pub max_udp_payload_size: Option<u16>,
     pub congestion_controller_factory: Option<CongestionControllerFactory>,
-    pub datagram_pacer: Option<Arc<DatagramPacer>>,
 }
 
 /// Common server that accepts both QUIC (Kymux) and WebTransport connections
 /// on the same port, dispatching based on negotiated ALPN.
 pub struct CommonServer {
     quinn_endpoint: Arc<quinn::Endpoint>,
-    datagram_pacer: Option<Arc<DatagramPacer>>,
 }
 
 impl CommonServer {
@@ -132,7 +132,6 @@ impl CommonServer {
 
         Ok(Self {
             quinn_endpoint: Arc::new(quinn_endpoint),
-            datagram_pacer: options.datagram_pacer.clone(),
         })
     }
 
@@ -155,9 +154,7 @@ impl super::Server for CommonServer {
         };
 
         #[allow(unused_mut)]
-        let mut quinn_connecting = quinn_incoming
-            .accept()
-            .map_err(|e| ConnectionError(format!("Failed to accept connection: {:?}", e)))?;
+        let mut quinn_connecting = quinn_incoming.accept().map_err(handshake_error)?;
 
         // If WebTransport is enabled, check ALPN to dispatch
         #[cfg(feature = "kynet-wtransport")]
@@ -189,13 +186,10 @@ impl super::Server for CommonServer {
             }
         }
 
-        // Kymux over QUIC connection (ALPN: "kymux" or no WebTransport support)
-        let quinn_connection = quinn_connecting
-            .await
-            .map_err(|e| ConnectionError(format!("Connection failed: {:?}", e)))?;
+        // Native QUIC connection using KYMUX_ALPN.
+        let quinn_connection = quinn_connecting.await.map_err(handshake_error)?;
         Ok(Some(Connection::new(QuinnConnectionDriver::wrap(
             quinn_connection,
-            self.datagram_pacer.clone(),
         ))))
     }
 

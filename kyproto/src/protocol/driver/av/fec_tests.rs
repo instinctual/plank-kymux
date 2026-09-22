@@ -90,11 +90,90 @@ fn full_headers_still_require_exact_symbols_and_valid_payload_ids() {
         let mut block = valid.to_vec();
         block[header - 4] = oti.source_blocks();
         assert!(parse_datagram(Bytes::from(block), header, MAX_VIDEO_PAYLOAD).is_err());
-        // IDs between K and K' denote implicit padding, not wire symbols.
-        let padding = EncodingPacket::new(PayloadId::new(0, 3), vec![0; 128]);
-        assert!(parse_datagram(datagram(header, oti, padding), header, MAX_VIDEO_PAYLOAD).is_err());
+        // RaptorQ 2's first repair ESI is K, even when K < K'.
+        let repair = EncodingPacket::new(PayloadId::new(0, 3), vec![0; 128]);
+        parse_datagram(datagram(header, oti, repair), header, MAX_VIDEO_PAYLOAD).unwrap();
         let repair = EncodingPacket::new(PayloadId::new(0, 0x00ff_ffff), vec![0; 128]);
         parse_datagram(datagram(header, oti, repair), header, MAX_VIDEO_PAYLOAD).unwrap();
+    }
+}
+
+#[test]
+fn raptorq_2_fixed_repair_vector() {
+    // Generated with the unmodified upstream 2.0.1 crate. Freeze both ESI and
+    // payload bytes so a dependency change cannot silently alter the wire.
+    let data = media_bytes(80);
+    let oti = Oti::new(92, 32, 1, 1, 8);
+    let expected: [[u8; 36]; 3] = [
+        [
+            0, 0, 0, 3, 106, 171, 8, 105, 124, 29, 190, 164, 229, 132, 39, 22, 171, 203, 107, 11,
+            54, 86, 246, 150, 140, 236, 76, 44, 17, 113, 209, 177, 119, 145, 166, 64,
+        ],
+        [
+            0, 0, 0, 4, 143, 190, 182, 69, 109, 158, 150, 240, 134, 117, 125, 239, 124, 66, 0, 62,
+            132, 186, 248, 198, 145, 175, 237, 211, 105, 87, 21, 43, 121, 192, 22, 175,
+        ],
+        [
+            0, 0, 0, 5, 255, 107, 63, 248, 225, 38, 114, 44, 218, 29, 73, 41, 72, 37, 146, 255,
+            225, 140, 59, 86, 7, 106, 221, 176, 174, 195, 116, 25, 147, 128, 181, 166,
+        ],
+    ];
+    let encoder = raptorq::Encoder::new(&data, oti);
+    let packets = encoder.get_block_encoders()[0].repair_packets(0, 3);
+    for (packet, bytes) in packets.iter().zip(expected) {
+        assert_eq!(packet.serialize(), bytes);
+    }
+    for header in [22, 26] {
+        let mut decoder = ObjectDecoder::new(oti, MAX_VIDEO_PAYLOAD).unwrap();
+        let mut recovered = None;
+        for bytes in expected {
+            let packet = EncodingPacket::deserialize(&bytes);
+            let (symbol, oti, id) =
+                parse_datagram(datagram(header, oti, packet), header, MAX_VIDEO_PAYLOAD).unwrap();
+            recovered = decoder.decode(oti, id, symbol).unwrap().or(recovered);
+        }
+        assert_eq!(recovered.as_deref(), Some(data.as_slice()));
+    }
+}
+
+#[test]
+fn rfc_repair_ids_start_at_k_and_recover_small_objects() {
+    // Audio commonly has K < K'. This used to be rejected as implicit padding
+    // by the 1.x validator, even though 2.x sends these as real repair ESIs.
+    for payload_size in [0, 20, 80, 127, 300, 5000] {
+        let data = media_bytes(payload_size);
+        let encoder = raptorq::Encoder::with_defaults(&data, 128);
+        let oti = encoder.get_config();
+        let k = source_symbols_for_block(&oti, 0);
+        assert_eq!(oti.source_blocks(), 1);
+        let block = &encoder.get_block_encoders()[0];
+        let repairs = block.repair_packets(0, k + 10);
+        assert_eq!(repairs[0].payload_id().encoding_symbol_id(), k);
+        for header in [22, 26] {
+            let mut decoder = ObjectDecoder::new(oti, MAX_VIDEO_PAYLOAD).unwrap();
+            let mut recovered = None;
+            // Repair-only recovery proves the first repair IDs are accepted
+            // and decoded correctly, not masked by a no-loss source fast path.
+            for (index, repair) in repairs.iter().enumerate() {
+                assert_eq!(repair.payload_id().encoding_symbol_id(), k + index as u32);
+                let (symbol, oti, id) = parse_datagram(
+                    datagram(header, oti, repair.clone()),
+                    header,
+                    MAX_VIDEO_PAYLOAD,
+                )
+                .unwrap();
+                if let Some(bytes) = decoder.decode(oti, id, symbol).unwrap() {
+                    recovered = Some(bytes);
+                    break;
+                }
+            }
+            assert_eq!(
+                recovered.as_deref(),
+                Some(data.as_slice()),
+                "size={payload_size}"
+            );
+            assert_eq!(decoder.received_sources, 0);
+        }
     }
 }
 

@@ -26,8 +26,7 @@ use crate::{
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::pin::Pin;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::Duration;
 
@@ -37,133 +36,48 @@ use rustls_platform_verifier::ConfigVerifierExt;
 use socket2::{Domain, Protocol, Socket, Type};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
-/// ALPN protocol identifier for Kymux protocol over standard QUIC.
-pub const KYMUX_ALPN: &[u8] = b"kymux";
+/// PLANK's native KyProto wire generation. RaptorQ 2 uses RFC 6330 repair
+/// symbol IDs, incompatible with the 1.x IDs used under the old `kymux` ALPN.
+/// Offer only this generation: mismatched peers must fail TLS before auth or
+/// media, not silently corrupt frames when the first repair is needed.
+pub const KYMUX_ALPN: &[u8] = b"plank-native/2";
+
+pub(super) fn handshake_error(error: quinn::ConnectionError) -> ConnectionError {
+    // TLS no_application_protocol (120), carried in QUIC's crypto error space
+    // (0x100). Quinn distinguishes a locally detected error from a peer close.
+    let incompatible = match &error {
+        quinn::ConnectionError::TransportError(error) => u64::from(error.code) == 0x178,
+        quinn::ConnectionError::ConnectionClosed(close) => u64::from(close.error_code) == 0x178,
+        _ => false,
+    };
+    if incompatible {
+        ConnectionError(
+            "Incompatible PLANK transport protocol; update both Host and Client to matching builds"
+                .into(),
+        )
+    } else {
+        error.into()
+    }
+}
 
 /// Quinn congestion-controller factory accepted by the generic Kynet driver.
 pub type CongestionControllerFactory =
     Arc<dyn quinn::congestion::ControllerFactory + Send + Sync + 'static>;
 
-#[derive(Debug)]
-struct DatagramPacerState {
-    virtual_finish: tokio::time::Instant,
-}
-
-/// Optional application-side DATAGRAM pacer.
-///
-/// KyProto already awaits every `send_datagram()` call. Kynet can therefore
-/// pace submissions before they enter Quinn without changing KyProto's media
-/// packetization or FEC object model. The small burst allowance avoids a timer
-/// wakeup for every individual datagram.
-#[derive(Debug)]
-pub struct DatagramPacer {
-    target_bps: AtomicU64,
-    burst: Duration,
-    wire_overhead_bytes: usize,
-    state: Mutex<DatagramPacerState>,
-}
-
-impl DatagramPacer {
-    pub fn new(target_bps: u64, burst: Duration, wire_overhead_bytes: usize) -> Self {
-        Self {
-            target_bps: AtomicU64::new(target_bps),
-            burst,
-            wire_overhead_bytes,
-            state: Mutex::new(DatagramPacerState {
-                virtual_finish: tokio::time::Instant::now(),
-            }),
-        }
-    }
-
-    pub fn target_bps(&self) -> u64 {
-        self.target_bps.load(Ordering::Acquire)
-    }
-
-    pub fn set_target_bps(&self, target_bps: u64) {
-        self.target_bps.store(target_bps, Ordering::Release);
-        self.state.lock().unwrap().virtual_finish = tokio::time::Instant::now();
-    }
-
-    fn reserve_deadline(
-        &self,
-        payload_bytes: usize,
-        now: tokio::time::Instant,
-    ) -> Option<tokio::time::Instant> {
-        let target_bps = self.target_bps();
-        if target_bps == 0 {
-            return None;
-        }
-
-        let wire_bytes = payload_bytes.saturating_add(self.wire_overhead_bytes);
-        let serialization_nanos = (wire_bytes as u128)
-            .saturating_mul(8)
-            .saturating_mul(1_000_000_000)
-            .div_ceil(target_bps as u128)
-            .min(u64::MAX as u128) as u64;
-        let serialization = Duration::from_nanos(serialization_nanos);
-        let deadline = {
-            let mut state = self.state.lock().unwrap();
-            if state.virtual_finish < now {
-                state.virtual_finish = now;
-            }
-            state.virtual_finish += serialization;
-            state
-                .virtual_finish
-                .checked_sub(self.burst)
-                .unwrap_or(now)
-                .max(now)
-        };
-        Some(deadline)
-    }
-
-    async fn wait(&self, payload_bytes: usize) {
-        let now = tokio::time::Instant::now();
-        if let Some(deadline) = self.reserve_deadline(payload_bytes, now)
-            && deadline > now
-        {
-            #[cfg(feature = "sender-timing")]
-            crate::sender_timing::update(|m| {
-                m.sleeps += 1;
-                m.sleep_requested_ns += crate::sender_timing::ns(deadline - now);
-            });
-            tokio::time::sleep_until(deadline).await;
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::DatagramPacer;
-    use std::time::Duration;
 
     #[test]
-    fn datagram_pacer_reserves_against_one_shared_timeline() {
-        let pacer = DatagramPacer::new(8_000_000, Duration::ZERO, 0);
-        let now = tokio::time::Instant::now();
-        let first = pacer.reserve_deadline(1_000, now).unwrap();
-        let second = pacer.reserve_deadline(1_000, now).unwrap();
-        assert_eq!(first - now, Duration::from_millis(1));
-        assert_eq!(second - now, Duration::from_millis(2));
+    fn native_wire_generation_is_explicit() {
+        assert_eq!(super::KYMUX_ALPN, b"plank-native/2");
     }
 
     #[test]
-    fn datagram_pacer_permits_only_the_configured_burst() {
-        let pacer = DatagramPacer::new(8_000_000, Duration::from_millis(2), 0);
-        let now = tokio::time::Instant::now();
-        assert_eq!(pacer.reserve_deadline(1_000, now), Some(now));
-        assert_eq!(pacer.reserve_deadline(1_000, now), Some(now));
+    fn unrelated_handshake_errors_keep_their_diagnosis() {
+        let error = quinn::ConnectionError::TimedOut;
         assert_eq!(
-            pacer.reserve_deadline(1_000, now),
-            Some(now + Duration::from_millis(1))
-        );
-    }
-
-    #[test]
-    fn zero_rate_disables_pacing() {
-        let pacer = DatagramPacer::new(0, Duration::from_millis(2), 0);
-        assert_eq!(
-            pacer.reserve_deadline(64 * 1024, tokio::time::Instant::now()),
-            None
+            super::handshake_error(error.clone()).to_string(),
+            super::ConnectionError::from(error).to_string()
         );
     }
 }
@@ -243,7 +157,7 @@ impl rustls::client::danger::ServerCertVerifier for HashCertVerifier {
 
 impl From<quinn::Connection> for Connection {
     fn from(value: quinn::Connection) -> Self {
-        Self::new(QuinnConnectionDriver::wrap(value, None))
+        Self::new(QuinnConnectionDriver::wrap(value))
     }
 }
 
@@ -264,25 +178,16 @@ pub struct QuinnClientOptions {
     pub certificate_hash: Option<String>,
     /// Optional application-selected Quinn congestion controller.
     pub congestion_controller_factory: Option<CongestionControllerFactory>,
-    /// Optional application-side DATAGRAM pacer shared by the connection.
-    pub datagram_pacer: Option<Arc<DatagramPacer>>,
 }
 
 #[derive(Debug)]
 pub(crate) struct QuinnConnectionDriver {
     conn: quinn::Connection,
-    datagram_pacer: Option<Arc<DatagramPacer>>,
 }
 
 impl QuinnConnectionDriver {
-    pub(crate) fn wrap(
-        conn: quinn::Connection,
-        datagram_pacer: Option<Arc<DatagramPacer>>,
-    ) -> Self {
-        Self {
-            conn,
-            datagram_pacer,
-        }
+    pub(crate) fn wrap(conn: quinn::Connection) -> Self {
+        Self { conn }
     }
 
     pub async fn connect(
@@ -365,11 +270,11 @@ impl QuinnConnectionDriver {
             socket.into(),
             Arc::new(quinn::TokioRuntime),
         )?;
-        let conn = endpoint.connect_with(config, addr, server_name)?.await?;
-        Ok(Connection::new(Self::wrap(
-            conn,
-            options.datagram_pacer.clone(),
-        )))
+        let conn = endpoint
+            .connect_with(config, addr, server_name)?
+            .await
+            .map_err(handshake_error)?;
+        Ok(Connection::new(Self::wrap(conn)))
     }
 }
 
@@ -417,17 +322,11 @@ impl ConnectionDriver for QuinnConnectionDriver {
         let timing = crate::sender_timing::active().then(std::time::Instant::now);
         #[cfg(feature = "sender-timing")]
         let bytes = data.len();
-        if let Some(pacer) = &self.datagram_pacer {
-            pacer.wait(data.len()).await;
-        }
-        #[cfg(feature = "sender-timing")]
-        let submit = timing.map(|_| std::time::Instant::now());
         let result = self.conn.send_datagram(data);
         #[cfg(feature = "sender-timing")]
-        if let (Some(start), Some(submit)) = (timing, submit) {
-            let elapsed = crate::sender_timing::ns(submit.elapsed());
+        if let Some(start) = timing {
+            let elapsed = crate::sender_timing::ns(start.elapsed());
             crate::sender_timing::update(|m| {
-                m.pacer_ns += crate::sender_timing::ns(submit - start);
                 m.quinn_ns += elapsed;
                 m.quinn_max_ns = m.quinn_max_ns.max(elapsed);
                 m.datagrams += 1;

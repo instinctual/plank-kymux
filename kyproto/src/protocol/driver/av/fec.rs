@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Validation boundary for untrusted FEC media. RaptorQ 1.x constructors and
+//! Validation boundary for untrusted FEC media. RaptorQ constructors and
 //! decoding routines assume valid RFC 6330 parameters and may panic otherwise.
 //! Do not construct a decoder, allocate from an OTI, or deserialize a media
 //! header until its corresponding checks here have succeeded.
@@ -18,7 +18,7 @@ pub(super) const MAX_AUDIO_PAYLOAD: usize = 64 * 1024;
 pub(super) const MAX_PENDING_OBJECTS: usize = 128;
 pub(super) const MAX_PENDING_GROUPS: usize = 32;
 const MAX_SOURCE_SYMBOLS: u64 = 131_072;
-// RFC 6330 / RaptorQ 1.8's systematic parameter table upper bound.
+// RFC 6330 systematic parameter table upper bound.
 const MAX_BLOCK_SYMBOLS: u64 = 56_403;
 const MEDIA_HEADER: usize = AVPacketHeader::SERIALIZED_SIZE;
 const MAX_CONFIG_PAYLOAD: usize = 1024 * 1024;
@@ -70,11 +70,11 @@ fn validate_symbol(oti: &Oti, id: &PayloadId, size: usize) -> Result<(), Protoco
     if size != usize::from(oti.symbol_size()) {
         return Err(invalid("symbol length does not match OTI"));
     }
-    let sources = source_symbols_for_block(oti, id.source_block_number());
-    let extended = raptorq::extended_source_block_symbols(sources);
-    if (sources..extended).contains(&id.encoding_symbol_id()) {
-        return Err(invalid("padding symbol must not be transmitted"));
-    }
+    // RFC 6330 wire IDs are source ESIs 0..K and repair ESIs K..2^24.
+    // RaptorQ 2 translates repairs to internal ISIs itself. In particular,
+    // K..K' are valid repairs, NOT transmitted padding. PayloadId decoding
+    // already bounds the wire ID to 24 bits; object/unique-symbol limits below
+    // bound the decoder independently of the numeric value of a repair ID.
     Ok(())
 }
 
