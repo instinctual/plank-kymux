@@ -18,8 +18,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+use super::fec;
 use crate::ProtocolStats;
-use crate::protocol::driver;
 use crate::protocol::driver::util::seq::Sequencer;
 use crate::protocol::{ProtocolError, ProtocolRecvDriver, ProtocolSendDriver};
 use crate::router::KyChannel;
@@ -30,7 +30,7 @@ use std::{collections::VecDeque, time::Duration};
 
 use async_trait::async_trait;
 use byteorder::{BigEndian, ByteOrder};
-use bytes::{Buf, BufMut, Bytes, BytesMut};
+use bytes::{BufMut, Bytes, BytesMut};
 use kymux_types::av::*;
 use kymux_util::*;
 use kynet::{RecvStream, SendStream};
@@ -191,8 +191,24 @@ struct DatagramMsg {
     payload_id: raptorq::PayloadId,
 }
 
+impl DatagramMsg {
+    fn parse(datagram: Bytes) -> Result<Self, ProtocolError> {
+        let (data, oti, payload_id) = fec::parse_datagram(
+            datagram.clone(),
+            DATAGRAM_HEADER_SIZE,
+            fec::MAX_AUDIO_PAYLOAD,
+        )?;
+        Ok(Self {
+            raw_kypacket_seq: BigEndian::read_u32(&datagram[2..6]),
+            data,
+            oti,
+            payload_id,
+        })
+    }
+}
+
 pub(crate) struct AudioUnreliableFecProtocolRecvDriver {
-    rx_client: mpsc::Receiver<AVPacket>,
+    rx_client: mpsc::Receiver<Result<AVPacket, ProtocolError>>,
     recv_stream_packets_task: Option<Task>,
     recv_datagrams_task: Option<Task>,
     process_task: Option<Task>,
@@ -213,18 +229,18 @@ impl AudioUnreliableFecProtocolRecvDriver {
         let tx2 = tx.clone();
         let recv_stream_packets_task = Task::spawn_task(
             async move {
-                let ret = Self::recv_stream_packets(stream, tx2).await;
+                let ret = Self::recv_stream_packets(stream, tx2.clone()).await;
                 if let Err(err) = ret {
-                    error!("recv_stream_packets() error: {err}");
+                    let _ = tx2.send(Err(err)).await;
                 }
             },
             "recv_stream_packets",
         );
         let recv_datagrams_task = Task::spawn_task(
             async move {
-                let ret = Self::recv_datagrams(ky_channel, tx).await;
+                let ret = Self::recv_datagrams(ky_channel, tx.clone()).await;
                 if let Err(err) = ret {
-                    error!("recv_datagrams() error: {err}");
+                    let _ = tx.send(Err(err)).await;
                 }
             },
             "recv_datagrams",
@@ -233,9 +249,9 @@ impl AudioUnreliableFecProtocolRecvDriver {
         let protocol_stats = protocol_stats.clone();
         let process_task = Task::spawn_task(
             async move {
-                let ret = Self::process(rx, tx_client, protocol_stats).await;
+                let ret = Self::process(rx, tx_client.clone(), protocol_stats).await;
                 if let Err(err) = ret {
-                    error!("process() error: {err}");
+                    let _ = tx_client.send(Err(err)).await;
                 }
             },
             "process",
@@ -251,7 +267,7 @@ impl AudioUnreliableFecProtocolRecvDriver {
 
     async fn recv_stream_packets(
         mut stream: RecvStream,
-        tx: mpsc::Sender<RecvMsg>,
+        tx: mpsc::Sender<Result<RecvMsg, ProtocolError>>,
     ) -> Result<(), ProtocolError> {
         loop {
             let mut seqs = [0; 4];
@@ -261,14 +277,12 @@ impl AudioUnreliableFecProtocolRecvDriver {
                 .map_err(ProtocolError::new)?;
             let raw_kypacket_seq = BigEndian::read_u32(&seqs);
 
-            let packet = driver::read_packet(&mut stream)
-                .await?
-                .ok_or_else(|| ProtocolError("Missing packet data on stream".to_string()))?;
+            let packet = fec::read_stream_packet(&mut stream, fec::MAX_AUDIO_PAYLOAD).await?;
 
-            tx.send(RecvMsg::Stream(StreamMsg {
+            tx.send(Ok(RecvMsg::Stream(StreamMsg {
                 packet,
                 raw_kypacket_seq,
-            }))
+            })))
             .await
             .map_err(ProtocolError::new)?;
         }
@@ -276,39 +290,22 @@ impl AudioUnreliableFecProtocolRecvDriver {
 
     async fn recv_datagrams(
         mut ky_channel: KyChannel,
-        tx: mpsc::Sender<RecvMsg>,
+        tx: mpsc::Sender<Result<RecvMsg, ProtocolError>>,
     ) -> Result<(), ProtocolError> {
         loop {
-            let mut datagram = ky_channel
+            let datagram = ky_channel
                 .recv_datagram()
                 .await
                 .map_err(ProtocolError::new)?;
-            assert!(datagram.len() >= DATAGRAM_HEADER_SIZE);
-            let _endpoint_id = datagram.get_u16();
-            let raw_kypacket_seq = datagram.get_u32();
-
-            let mut oti = [0; 12];
-            datagram.copy_to_slice(&mut oti);
-            let oti = raptorq::ObjectTransmissionInformation::deserialize(&oti);
-
-            let mut payload_id = [0; 4];
-            datagram.copy_to_slice(&mut payload_id);
-            let payload_id = raptorq::PayloadId::deserialize(&payload_id);
-
-            tx.send(RecvMsg::Datagram(DatagramMsg {
-                data: datagram,
-                raw_kypacket_seq,
-                oti,
-                payload_id,
-            }))
-            .await
-            .map_err(ProtocolError::new)?;
+            tx.send(Ok(RecvMsg::Datagram(DatagramMsg::parse(datagram)?)))
+                .await
+                .map_err(ProtocolError::new)?;
         }
     }
 
     async fn process(
-        mut rx: mpsc::Receiver<RecvMsg>,
-        mut tx_client: mpsc::Sender<AVPacket>,
+        mut rx: mpsc::Receiver<Result<RecvMsg, ProtocolError>>,
+        tx_client: mpsc::Sender<Result<AVPacket, ProtocolError>>,
         protocol_stats: KyArc<KyMutex<ProtocolStats>>,
     ) -> Result<(), ProtocolError> {
         let mut kypacket_sequencer = Sequencer::<u32>::new();
@@ -320,20 +317,20 @@ impl AudioUnreliableFecProtocolRecvDriver {
         loop {
             tokio::select! {
                 msg = rx.recv() => {
-                    match msg {
+                    match msg.transpose()? {
                         Some(RecvMsg::Stream(msg)) => {
                             if let AVPacket::Codec(packet) = &msg.packet {
                                 debug!("===== SEND codec packet to client");
                                 frame_size = Some(packet.header.frame_size);
-                                assert!(frame_size.unwrap() > 0);
-                                tx_client.send(msg.packet).await.map_err(ProtocolError::new)?;
+                                if frame_size == Some(0) { return Err(fec::invalid("zero audio frame size")); }
+                                tx_client.send(Ok(msg.packet)).await.map_err(ProtocolError::new)?;
                                 continue;
                             }
 
                             let kypacket_seq = kypacket_sequencer.seq(msg.raw_kypacket_seq);
 
                             if kypacket_seq >= next_kypacket_seq {
-                                pending_group.insert_stream_packet(kypacket_seq, msg.packet);
+                                pending_group.insert_stream_packet(kypacket_seq, msg.packet)?;
                             }
                         }
                         Some(RecvMsg::Datagram(msg)) => {
@@ -346,7 +343,7 @@ impl AudioUnreliableFecProtocolRecvDriver {
                             }
 
                             debug!("===== RECV datagram {kypacket_seq}:{:?}", msg.payload_id);
-                            pending_group.insert_datagram(kypacket_seq, msg.oti, msg.payload_id, msg.data);
+                            pending_group.insert_datagram(kypacket_seq, msg.oti, msg.payload_id, msg.data)?;
                         }
                         None => return Ok(()), // No more data
                     }
@@ -372,7 +369,8 @@ impl AudioUnreliableFecProtocolRecvDriver {
                     kypacket_seq,
                     packet,
                 } => {
-                    assert!(frame_size.is_some());
+                    let frame_size =
+                        frame_size.ok_or_else(|| fec::invalid("audio before codec"))?;
                     if kypacket_seq > next_kypacket_seq {
                         let missing_packets = kypacket_seq - next_kypacket_seq;
                         {
@@ -392,8 +390,8 @@ impl AudioUnreliableFecProtocolRecvDriver {
                         }
 
                         let missing_packets = kypacket_seq - next_kypacket_seq;
-                        let frame_size = frame_size.expect("No frame_size set");
-                        let missing_audio_samples = missing_packets * frame_size as u64;
+                        let missing_audio_samples =
+                            missing_packets.saturating_mul(frame_size as u64);
                         let missing_audio_samples =
                             std::cmp::min(missing_audio_samples, u32::MAX.into()) as u32;
 
@@ -402,12 +400,15 @@ impl AudioUnreliableFecProtocolRecvDriver {
                                 missing_audio_samples,
                             },
                         });
-                        tx_client.send(hole).await.map_err(ProtocolError::new)?;
+                        tx_client.send(Ok(hole)).await.map_err(ProtocolError::new)?;
                     }
 
                     debug!("===== SEND kypacket {kypacket_seq} to client");
                     next_kypacket_seq = kypacket_seq + 1;
-                    tx_client.send(packet).await.map_err(ProtocolError::new)?;
+                    tx_client
+                        .send(Ok(packet))
+                        .await
+                        .map_err(ProtocolError::new)?;
                     deadline = None;
                 }
             }
@@ -435,12 +436,25 @@ impl ProtocolRecvDriver for AudioUnreliableFecProtocolRecvDriver {
     type Packet = AVPacket;
 
     async fn recv(&mut self) -> Result<Option<AVPacket>, ProtocolError> {
-        Ok(self.rx_client.recv().await)
+        let result = self.rx_client.recv().await.transpose();
+        if result.is_err() {
+            if let Some(task) = self.recv_stream_packets_task.take() {
+                task.cancel();
+            }
+            if let Some(task) = self.recv_datagrams_task.take() {
+                task.cancel();
+            }
+            if let Some(task) = self.process_task.take() {
+                task.cancel();
+            }
+        }
+        result
     }
 }
 
 #[derive(Debug)]
 struct DatagramPacket {
+    oti: raptorq::ObjectTransmissionInformation,
     packet: AVPacket,
     kypacket_seq: u64,
     instant: Instant, // assemble() timestamp
@@ -511,6 +525,28 @@ struct PendingGroup {
 }
 
 impl PendingGroup {
+    fn check_capacity(&self, additional: usize) -> Result<(), ProtocolError> {
+        let mut objects = self.segments.len() + self.datagrams.len();
+        let mut bytes = self
+            .segments
+            .iter()
+            .map(|s| fec::reservation(&s.decoder.oti))
+            .sum::<usize>()
+            + self
+                .datagrams
+                .iter()
+                .map(|d| fec::reservation(&d.oti))
+                .sum::<usize>();
+        if let ConfigPacket::Ready(StreamPacket {
+            packet: AVPacket::Media(media),
+            ..
+        }) = &self.config_packet
+        {
+            objects += 1;
+            bytes += media.payload.len();
+        }
+        fec::check_pending(objects, bytes, additional, fec::MAX_AUDIO_PAYLOAD)
+    }
     fn new() -> Self {
         Self {
             config_packet: ConfigPacket::None,
@@ -519,12 +555,23 @@ impl PendingGroup {
         }
     }
 
-    fn insert_stream_packet(&mut self, kypacket_seq: u64, packet: AVPacket) {
-        assert!(self.config_packet.is_none());
+    fn insert_stream_packet(
+        &mut self,
+        kypacket_seq: u64,
+        packet: AVPacket,
+    ) -> Result<(), ProtocolError> {
+        let AVPacket::Media(media) = &packet else {
+            return Err(fec::invalid("expected audio config"));
+        };
+        if !media.header.is_config || !self.config_packet.is_none() {
+            return Err(fec::invalid("invalid or duplicate audio config"));
+        }
+        self.check_capacity(media.payload.len())?;
         self.config_packet = ConfigPacket::Ready(StreamPacket {
             packet,
             kypacket_seq,
         });
+        Ok(())
     }
 
     fn insert_datagram(
@@ -533,42 +580,47 @@ impl PendingGroup {
         oti: raptorq::ObjectTransmissionInformation,
         payload_id: raptorq::PayloadId,
         data: Bytes,
-    ) {
+    ) -> Result<(), ProtocolError> {
         let index = self
             .datagrams
             .binary_search_by_key(&kypacket_seq, |datagram| datagram.kypacket_seq);
         // If the kypacket having this kypacket_seq is not already re-assembled
         if index.is_err() {
-            let index = self.prepare_datagram_segments(kypacket_seq, oti);
+            let index = self.prepare_datagram_segments(kypacket_seq, oti)?;
 
             let is_complete = {
                 let segments = &mut self.segments[index];
-                segments.add_packet(oti, payload_id, data);
+                segments.add_packet(oti, payload_id, data)?;
                 segments.is_complete()
             };
 
             if is_complete {
                 let segments = self.segments.remove(index);
-                let datagram_packet = segments.assemble();
+                let datagram_packet = segments.assemble()?;
                 self.insert_datagram_packet(datagram_packet);
             }
+        } else if self.datagrams[index.unwrap()].oti != oti {
+            return Err(fec::invalid("OTI changed for completed audio object"));
         }
+        Ok(())
     }
 
     fn prepare_datagram_segments(
         &mut self,
         kypacket_seq: u64,
         oti: raptorq::ObjectTransmissionInformation,
-    ) -> usize {
+    ) -> Result<usize, ProtocolError> {
         let index = self
             .segments
             .binary_search_by_key(&kypacket_seq, |segments| segments.kypacket_seq);
         match index {
-            Ok(index) => index,
+            Ok(index) => Ok(index),
             Err(index) => {
-                let segments = DatagramSegments::new(kypacket_seq, oti);
+                fec::validate_oti(&oti, fec::MAX_AUDIO_PAYLOAD)?;
+                self.check_capacity(fec::reservation(&oti))?;
+                let segments = DatagramSegments::new(kypacket_seq, oti)?;
                 self.segments.insert(index, segments);
-                index
+                Ok(index)
             }
         }
     }
@@ -681,19 +733,20 @@ impl PendingGroup {
 #[derive(Debug)]
 struct DatagramSegments {
     kypacket_seq: u64,
-    oti: raptorq::ObjectTransmissionInformation,
-    decoder: raptorq::Decoder,
+    decoder: fec::ObjectDecoder,
     assembled: Option<Vec<u8>>,
 }
 
 impl DatagramSegments {
-    fn new(kypacket_seq: u64, oti: raptorq::ObjectTransmissionInformation) -> Self {
-        Self {
+    fn new(
+        kypacket_seq: u64,
+        oti: raptorq::ObjectTransmissionInformation,
+    ) -> Result<Self, ProtocolError> {
+        Ok(Self {
             kypacket_seq,
-            oti,
-            decoder: raptorq::Decoder::new(oti),
+            decoder: fec::ObjectDecoder::new(oti, fec::MAX_AUDIO_PAYLOAD)?,
             assembled: None,
-        }
+        })
     }
 
     fn add_packet(
@@ -701,33 +754,30 @@ impl DatagramSegments {
         oti: raptorq::ObjectTransmissionInformation,
         payload_id: raptorq::PayloadId,
         data: Bytes,
-    ) {
-        assert!(self.assembled.is_none());
-        assert!(oti == self.oti);
-        let encoding_packet = raptorq::EncodingPacket::new(payload_id, data.into());
-        self.assembled = self.decoder.decode(encoding_packet);
+    ) -> Result<(), ProtocolError> {
+        self.assembled = self.decoder.decode(oti, payload_id, data)?;
+        Ok(())
     }
 
     fn is_complete(&self) -> bool {
         self.assembled.is_some()
     }
 
-    fn assemble(self) -> DatagramPacket {
-        assert!(self.is_complete());
-        let data = self.assembled.unwrap();
+    fn assemble(self) -> Result<DatagramPacket, ProtocolError> {
+        let data = self
+            .assembled
+            .ok_or_else(|| fec::invalid("incomplete audio object"))?;
+        let packet = fec::media_packet(data)?;
 
-        // TODO for now, the kypacket header is sent "as is" over datagrams.
-        // In the future, they might be rewritten (we don't need the same data,
-        // for example size is redundant)
-        let header = MediaPacketHeader::deserialize(&data[..AVPacketHeader::SERIALIZED_SIZE]);
-
-        let payload = Bytes::from(data).slice(AVPacketHeader::SERIALIZED_SIZE..);
-        let packet = AVPacket::Media(MediaPacket { header, payload });
-
-        DatagramPacket {
+        Ok(DatagramPacket {
+            oti: self.decoder.oti,
             packet,
             kypacket_seq: self.kypacket_seq,
             instant: Instant::now(),
-        }
+        })
     }
 }
+
+#[cfg(test)]
+#[path = "audio_fec_validation_tests.rs"]
+mod validation_tests;
