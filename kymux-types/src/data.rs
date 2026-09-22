@@ -21,8 +21,12 @@
 use kymux_util::{KyAsyncRead, KyAsyncWrite};
 
 use bytes::{Bytes, BytesMut};
-use std::io::{ErrorKind, Result};
+use std::io::{Error, ErrorKind, Result};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+/// Maximum reliable-data payload, excluding the four-byte length prefix.
+/// Enforce this at the wire boundary, before allocating a peer-declared size.
+pub const MAX_DATA_PACKET_SIZE: usize = 1024 * 1024;
 
 #[derive(Debug, Clone)]
 pub struct DataPacket {
@@ -31,7 +35,13 @@ pub struct DataPacket {
 
 impl super::Serializable for DataPacket {
     async fn write(self, writer: &mut (dyn KyAsyncWrite + Unpin)) -> Result<()> {
-        let size = u32::try_from(self.payload.len()).expect("Data packet size must fit in 32 bits");
+        if !(1..=MAX_DATA_PACKET_SIZE).contains(&self.payload.len()) {
+            return Err(Error::new(
+                ErrorKind::InvalidInput,
+                "invalid data packet size",
+            ));
+        }
+        let size = self.payload.len() as u32;
 
         writer.write_all(&size.to_be_bytes()).await?;
         writer.write_all(&self.payload).await?;
@@ -41,15 +51,22 @@ impl super::Serializable for DataPacket {
 
     async fn read(reader: &mut (dyn KyAsyncRead + Unpin)) -> Result<Option<Self>> {
         let mut buf = [0; 4];
-        if let Err(err) = reader.read_exact(&mut buf).await {
-            if err.kind() == ErrorKind::UnexpectedEof {
-                return Ok(None); // EOF
-            }
-            return Err(err);
+        // Only EOF between records is clean. A partial header is malformed,
+        // just like a truncated payload; do not silently accept it as shutdown.
+        let read = reader.read(&mut buf).await?;
+        if read == 0 {
+            return Ok(None);
         }
-        let size = u32::from_be_bytes(buf);
+        reader.read_exact(&mut buf[read..]).await?;
+        let size = u32::from_be_bytes(buf) as usize;
+        if !(1..=MAX_DATA_PACKET_SIZE).contains(&size) {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                "invalid data packet size",
+            ));
+        }
 
-        let mut buf = BytesMut::zeroed(size as usize);
+        let mut buf = BytesMut::zeroed(size);
         reader.read_exact(&mut buf).await?;
         let payload = buf.freeze();
 
