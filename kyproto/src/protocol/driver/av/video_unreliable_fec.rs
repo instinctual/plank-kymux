@@ -716,61 +716,68 @@ impl VideoUnreliableFecProtocolRecvDriver {
                 } => {}
             }
 
-            match pending_groups.take_next_packet(next_kypacket_seq) {
-                Action::None => deadline = None,
-                Action::Deadline(instant) => {
-                    deadline = Some(instant);
-                    // continue looping
-                }
-                Action::Packet {
-                    kypacket_seq,
-                    packet,
-                    fec_stats,
-                } => {
-                    debug!("===== SEND kypacket {kypacket_seq} to client");
-                    if fec_stats.source_symbols != 0 {
-                        let mut protocol_stats = protocol_stats.lock();
-                        protocol_stats.video_fec_source_symbols = Some(
-                            protocol_stats.video_fec_source_symbols.unwrap_or_default()
-                                + fec_stats.source_symbols,
-                        );
-                        protocol_stats.video_fec_source_symbols_missing = Some(
-                            protocol_stats
-                                .video_fec_source_symbols_missing
-                                .unwrap_or_default()
-                                + fec_stats.missing_source_symbols,
-                        );
-                        protocol_stats.video_fec_source_symbols_unrecovered = Some(
-                            protocol_stats
-                                .video_fec_source_symbols_unrecovered
-                                .unwrap_or_default()
-                                + fec_stats.unrecovered_source_symbols,
-                        );
+            // Drain all completed packets before waiting for more network
+            // input. In particular, a late reliable config can unlock media
+            // whose datagrams have already all arrived.
+            loop {
+                match pending_groups.take_next_packet(next_kypacket_seq) {
+                    Action::None => {
+                        deadline = None;
+                        break;
                     }
-                    if kypacket_seq > next_kypacket_seq {
-                        let missing_packets = kypacket_seq - next_kypacket_seq;
-                        {
+                    Action::Deadline(instant) => {
+                        deadline = Some(instant);
+                        break;
+                    }
+                    Action::Packet {
+                        kypacket_seq,
+                        packet,
+                        fec_stats,
+                    } => {
+                        debug!("===== SEND kypacket {kypacket_seq} to client");
+                        if fec_stats.source_symbols != 0 {
                             let mut protocol_stats = protocol_stats.lock();
-                            let dropped_packets =
-                                protocol_stats.dropped_packets.unwrap_or_default();
-                            protocol_stats.dropped_packets =
-                                Some(dropped_packets + missing_packets);
-                        }
-                        if kypacket_seq == next_kypacket_seq + 1 {
-                            warn!("Missing packet {next_kypacket_seq}");
-                        } else {
-                            warn!(
-                                "Missing packets {next_kypacket_seq} to {}",
-                                kypacket_seq - 1
+                            protocol_stats.video_fec_source_symbols = Some(
+                                protocol_stats.video_fec_source_symbols.unwrap_or_default()
+                                    + fec_stats.source_symbols,
+                            );
+                            protocol_stats.video_fec_source_symbols_missing = Some(
+                                protocol_stats
+                                    .video_fec_source_symbols_missing
+                                    .unwrap_or_default()
+                                    + fec_stats.missing_source_symbols,
+                            );
+                            protocol_stats.video_fec_source_symbols_unrecovered = Some(
+                                protocol_stats
+                                    .video_fec_source_symbols_unrecovered
+                                    .unwrap_or_default()
+                                    + fec_stats.unrecovered_source_symbols,
                             );
                         }
+                        if kypacket_seq > next_kypacket_seq {
+                            let missing_packets = kypacket_seq - next_kypacket_seq;
+                            {
+                                let mut protocol_stats = protocol_stats.lock();
+                                let dropped_packets =
+                                    protocol_stats.dropped_packets.unwrap_or_default();
+                                protocol_stats.dropped_packets =
+                                    Some(dropped_packets + missing_packets);
+                            }
+                            if kypacket_seq == next_kypacket_seq + 1 {
+                                warn!("Missing packet {next_kypacket_seq}");
+                            } else {
+                                warn!(
+                                    "Missing packets {next_kypacket_seq} to {}",
+                                    kypacket_seq - 1
+                                );
+                            }
+                        }
+                        next_kypacket_seq = kypacket_seq + 1;
+                        tx_client
+                            .send(Ok(packet))
+                            .await
+                            .map_err(ProtocolError::new)?;
                     }
-                    next_kypacket_seq = kypacket_seq + 1;
-                    tx_client
-                        .send(Ok(packet))
-                        .await
-                        .map_err(ProtocolError::new)?;
-                    deadline = None;
                 }
             }
         }

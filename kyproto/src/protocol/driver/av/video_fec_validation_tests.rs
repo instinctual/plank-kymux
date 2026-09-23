@@ -2,6 +2,67 @@
 use super::*;
 use fec::tests::{datagram, media_bytes};
 
+#[tokio::test]
+async fn video_drains_completed_media_after_late_config_without_another_datagram() {
+    let (tx, rx) = mpsc::channel(16);
+    let (client_tx, mut client_rx) = mpsc::channel(16);
+    tx.send(Ok(RecvMsg::Stream(StreamMsg {
+        raw_kypacket_seq: 0,
+        raw_group_seq: 1,
+        packet: AVPacket::Codec(CodecPacket {
+            header: CodecPacketHeader {
+                codec: 1,
+                rotation: 0,
+                frame_size: 0,
+            },
+        }),
+    })))
+    .await
+    .unwrap();
+    for seq in 1..=2 {
+        let data = media_bytes(16);
+        let encoder = raptorq::Encoder::with_defaults(&data, 128);
+        for packet in encoder.get_encoded_packets(0) {
+            let (payload_id, data) = packet.split();
+            tx.send(Ok(RecvMsg::Datagram(DatagramMsg {
+                data: Bytes::from(data),
+                raw_kypacket_seq: seq,
+                raw_group_seq: 1,
+                oti: encoder.get_config(),
+                payload_id,
+            })))
+            .await
+            .unwrap();
+        }
+    }
+    tx.send(Ok(RecvMsg::Stream(StreamMsg {
+        raw_kypacket_seq: 0,
+        raw_group_seq: 1,
+        packet: config(),
+    })))
+    .await
+    .unwrap();
+    let task = tokio::spawn(VideoUnreliableFecProtocolRecvDriver::process(
+        rx,
+        client_tx,
+        KyArc::new(KyMutex::new(ProtocolStats::default())),
+    ));
+    for index in 0..4 {
+        let packet = tokio::time::timeout(Duration::from_secs(1), client_rx.recv())
+            .await
+            .expect("completed video remained buffered")
+            .unwrap()
+            .unwrap();
+        match packet {
+            AVPacket::Codec(_) => assert_eq!(index, 0),
+            AVPacket::Media(media) => assert_eq!(media.header.is_config, index == 1),
+            _ => panic!("unexpected video hole"),
+        }
+    }
+    drop(tx);
+    assert!(task.await.unwrap().is_ok());
+}
+
 fn config() -> AVPacket {
     AVPacket::Media(MediaPacket {
         header: MediaPacketHeader {
