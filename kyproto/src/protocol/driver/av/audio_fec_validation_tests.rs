@@ -2,6 +2,74 @@
 use super::*;
 use fec::tests::{datagram, media_bytes};
 
+#[tokio::test]
+async fn audio_drains_completed_media_after_late_config_without_another_datagram() {
+    let (tx, rx) = mpsc::channel(16);
+    let (client_tx, mut client_rx) = mpsc::channel(16);
+    tx.send(Ok(RecvMsg::Stream(StreamMsg {
+        raw_kypacket_seq: 0,
+        packet: AVPacket::Codec(CodecPacket {
+            header: CodecPacketHeader {
+                codec: 1,
+                rotation: 0,
+                frame_size: 480,
+            },
+        }),
+    })))
+    .await
+    .unwrap();
+    for seq in 1..=2 {
+        let data = media_bytes(16);
+        let encoder = raptorq::Encoder::with_defaults(&data, 128);
+        for packet in encoder.get_encoded_packets(0) {
+            let (payload_id, data) = packet.split();
+            tx.send(Ok(RecvMsg::Datagram(DatagramMsg {
+                data: Bytes::from(data),
+                raw_kypacket_seq: seq,
+                oti: encoder.get_config(),
+                payload_id,
+            })))
+            .await
+            .unwrap();
+        }
+    }
+    tx.send(Ok(RecvMsg::Stream(StreamMsg {
+        raw_kypacket_seq: 0,
+        packet: AVPacket::Media(MediaPacket {
+            header: MediaPacketHeader {
+                is_config: true,
+                is_key: true,
+                pts: 0,
+                size: 0,
+            },
+            payload: Bytes::new(),
+        }),
+    })))
+    .await
+    .unwrap();
+    let task = tokio::spawn(AudioUnreliableFecProtocolRecvDriver::process(
+        rx,
+        client_tx,
+        KyArc::new(KyMutex::new(ProtocolStats::default())),
+    ));
+    // Keep the input channel open but send nothing else: a new arrival must
+    // not be required to publish media that has already been reconstructed.
+    for index in 0..4 {
+        let packet = tokio::time::timeout(Duration::from_secs(1), client_rx.recv())
+            .await
+            .expect("completed audio remained buffered")
+            .unwrap()
+            .unwrap();
+        match packet {
+            AVPacket::Codec(_) => assert_eq!(index, 0),
+            AVPacket::Media(media) => assert_eq!(media.header.is_config, index == 1),
+            _ => panic!("unexpected audio hole"),
+        }
+    }
+    drop(tx);
+    assert!(task.await.unwrap().is_ok());
+}
+
 #[test]
 fn audio_parser_rejects_every_short_header() {
     for size in 0..DATAGRAM_HEADER_SIZE {

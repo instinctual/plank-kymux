@@ -359,57 +359,64 @@ impl AudioUnreliableFecProtocolRecvDriver {
                 } => {}
             }
 
-            match pending_group.take_next_packet(next_kypacket_seq) {
-                Action::None => deadline = None,
-                Action::Deadline(instant) => {
-                    deadline = Some(instant);
-                    // continue looping
-                }
-                Action::Packet {
-                    kypacket_seq,
-                    packet,
-                } => {
-                    let frame_size =
-                        frame_size.ok_or_else(|| fec::invalid("audio before codec"))?;
-                    if kypacket_seq > next_kypacket_seq {
-                        let missing_packets = kypacket_seq - next_kypacket_seq;
-                        {
-                            let mut protocol_stats = protocol_stats.lock();
-                            let dropped_packets =
-                                protocol_stats.dropped_packets.unwrap_or_default();
-                            protocol_stats.dropped_packets =
-                                Some(dropped_packets + missing_packets);
-                        }
-                        if kypacket_seq == next_kypacket_seq + 1 {
-                            warn!("Missing packet {next_kypacket_seq}");
-                        } else {
-                            warn!(
-                                "Missing packets {next_kypacket_seq} to {}",
-                                kypacket_seq - 1
-                            );
-                        }
-
-                        let missing_packets = kypacket_seq - next_kypacket_seq;
-                        let missing_audio_samples =
-                            missing_packets.saturating_mul(frame_size as u64);
-                        let missing_audio_samples =
-                            std::cmp::min(missing_audio_samples, u32::MAX.into()) as u32;
-
-                        let hole = AVPacket::Hole(HolePacket {
-                            header: HolePacketHeader {
-                                missing_audio_samples,
-                            },
-                        });
-                        tx_client.send(Ok(hole)).await.map_err(ProtocolError::new)?;
+            // Drain all completed packets before waiting for more network
+            // input. In particular, a late reliable config can unlock media
+            // whose datagrams have already all arrived.
+            loop {
+                match pending_group.take_next_packet(next_kypacket_seq) {
+                    Action::None => {
+                        deadline = None;
+                        break;
                     }
+                    Action::Deadline(instant) => {
+                        deadline = Some(instant);
+                        break;
+                    }
+                    Action::Packet {
+                        kypacket_seq,
+                        packet,
+                    } => {
+                        let frame_size =
+                            frame_size.ok_or_else(|| fec::invalid("audio before codec"))?;
+                        if kypacket_seq > next_kypacket_seq {
+                            let missing_packets = kypacket_seq - next_kypacket_seq;
+                            {
+                                let mut protocol_stats = protocol_stats.lock();
+                                let dropped_packets =
+                                    protocol_stats.dropped_packets.unwrap_or_default();
+                                protocol_stats.dropped_packets =
+                                    Some(dropped_packets + missing_packets);
+                            }
+                            if kypacket_seq == next_kypacket_seq + 1 {
+                                warn!("Missing packet {next_kypacket_seq}");
+                            } else {
+                                warn!(
+                                    "Missing packets {next_kypacket_seq} to {}",
+                                    kypacket_seq - 1
+                                );
+                            }
 
-                    debug!("===== SEND kypacket {kypacket_seq} to client");
-                    next_kypacket_seq = kypacket_seq + 1;
-                    tx_client
-                        .send(Ok(packet))
-                        .await
-                        .map_err(ProtocolError::new)?;
-                    deadline = None;
+                            let missing_packets = kypacket_seq - next_kypacket_seq;
+                            let missing_audio_samples =
+                                missing_packets.saturating_mul(frame_size as u64);
+                            let missing_audio_samples =
+                                std::cmp::min(missing_audio_samples, u32::MAX.into()) as u32;
+
+                            let hole = AVPacket::Hole(HolePacket {
+                                header: HolePacketHeader {
+                                    missing_audio_samples,
+                                },
+                            });
+                            tx_client.send(Ok(hole)).await.map_err(ProtocolError::new)?;
+                        }
+
+                        debug!("===== SEND kypacket {kypacket_seq} to client");
+                        next_kypacket_seq = kypacket_seq + 1;
+                        tx_client
+                            .send(Ok(packet))
+                            .await
+                            .map_err(ProtocolError::new)?;
+                    }
                 }
             }
         }
