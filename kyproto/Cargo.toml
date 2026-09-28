@@ -35,7 +35,7 @@ tokio = { version = "1.32.0", features = ["rt", "time"] }
 
 [target.'cfg(target_family = "wasm")'.dependencies]
 kynet = { path = "../kynet", features = ["kynet-webtransport-js"] }
-kywasmtime = { git = "https://github.com/rom1v/kywasmtime.git", tag = "0.1" }
+kywasmtime = { git = "https://github.com/rom1v/kywasmtime.git", tag = "0.3" }
 
 # https://doc.rust-lang.org/cargo/reference/features.html#optional-dependencies
 [features]
