@@ -22,6 +22,7 @@ use super::{MessageRecvStreamDriver, MessageSendStreamDriver};
 use crate::{Connection, MessageRecvStream, MessageSendStream};
 
 use std::io;
+use std::net::SocketAddr;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -44,6 +45,7 @@ pub enum TlsConfig {
 
 pub async fn connect(
     url: &str,
+    explicit_addr: Option<SocketAddr>,
     tls_config: TlsConfig,
     headers: HeaderMap,
 ) -> io::Result<Connection> {
@@ -85,7 +87,12 @@ pub async fn connect(
     let dnsname = rustls_pki_types::ServerName::try_from(host.to_owned())
         .map_err(|e| io::Error::other(format!("Invalid server name: {e}")))?;
 
-    let stream = TcpStream::connect((host, port)).await?;
+    let stream = if let Some(addr) = explicit_addr {
+        TcpStream::connect(addr).await?
+    } else {
+        TcpStream::connect((host, port)).await?
+    };
+
     let stream = connector.connect(dnsname, stream).await?;
 
     let (stream, _response) = tokio_tungstenite::client_async(request, stream)

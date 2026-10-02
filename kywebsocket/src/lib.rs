@@ -58,10 +58,11 @@ impl Connection {
     #[cfg(feature = "kywebsocket-tungstenite")]
     pub async fn tungstenite_connect(
         url: &str,
+        explicit_addr: Option<std::net::SocketAddr>,
         tls_config: tungstenite::TlsConfig,
         headers: tungstenite::HeaderMap,
     ) -> Result<Self> {
-        driver::tungstenite::connect(url, tls_config, headers).await
+        driver::tungstenite::connect(url, explicit_addr, tls_config, headers).await
     }
 
     pub async fn close(self) {
