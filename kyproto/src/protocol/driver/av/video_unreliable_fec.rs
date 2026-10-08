@@ -1060,11 +1060,24 @@ impl PendingGroups {
                 return Err(fec::invalid("object changed video group"));
             }
         }
-        let index = self.prepare_pending_group(group_seq)?;
-        if !self.pending_groups[index].contains(kypacket_seq) {
+        let already_pending = self
+            .pending_groups
+            .iter()
+            .any(|group| group.group_seq == group_seq && group.contains(kypacket_seq));
+        if !already_pending {
             self.admit(fec::reservation(&oti))?;
+            // Admission can remove groups and advance the retirement boundary.
+            // Do not recreate media that became obsolete during that eviction.
+            if self
+                .retired_through
+                .is_some_and(|retired| kypacket_seq <= retired)
+            {
+                return Ok(());
+            }
         }
-
+        // Resolve by identity only after admission has finished mutating the
+        // group vector; an earlier index could now select a different group.
+        let index = self.prepare_pending_group(group_seq)?;
         let pending_group = &mut self.pending_groups[index];
         pending_group.insert_datagram(kypacket_seq, oti, payload_id, data)
     }
@@ -1514,6 +1527,112 @@ mod tests {
         let mut data = header.serialize().to_vec();
         data.extend((0..size).map(|i| (i % 251) as u8));
         data
+    }
+
+    fn incomplete_symbol() -> (
+        raptorq::ObjectTransmissionInformation,
+        raptorq::PayloadId,
+        Bytes,
+    ) {
+        let encoder = raptorq::Encoder::with_defaults(&frame_bytes(1), 1200);
+        let (id, data) = encoder.get_encoded_packets(0).remove(0).split();
+        (encoder.get_config(), id, Bytes::from(data))
+    }
+
+    #[test]
+    fn eviction_of_earlier_group_preserves_incoming_group() {
+        let (oti, id, data) = incomplete_symbol();
+        let mut pending = PendingGroups::new();
+        pending
+            .insert_datagram(1, 1, oti, id.clone(), data.clone())
+            .unwrap();
+        for seq in 2..=fec::MAX_PENDING_OBJECTS as u64 {
+            pending
+                .insert_datagram(2, seq, oti, id.clone(), data.clone())
+                .unwrap();
+        }
+        pending.pending_groups[0].segments[0].created = Instant::now() - Duration::from_millis(100);
+
+        let seq = fec::MAX_PENDING_OBJECTS as u64 + 1;
+        pending.insert_datagram(2, seq, oti, id, data).unwrap();
+        assert_eq!(pending.pending_groups.len(), 1);
+        assert_eq!(pending.pending_groups[0].group_seq, 2);
+        assert!(pending.pending_groups[0].contains(seq));
+        assert!(
+            pending
+                .pending_groups
+                .iter()
+                .map(|group| group.usage().0)
+                .sum::<usize>()
+                <= fec::MAX_PENDING_OBJECTS
+        );
+    }
+
+    #[test]
+    fn eviction_cannot_insert_into_another_group_at_shifted_index() {
+        let (oti, id, data) = incomplete_symbol();
+        let mut pending = PendingGroups::new();
+        pending
+            .insert_datagram(1, 1, oti, id.clone(), data.clone())
+            .unwrap();
+        for seq in 2..fec::MAX_PENDING_OBJECTS as u64 {
+            pending
+                .insert_datagram(2, seq, oti, id.clone(), data.clone())
+                .unwrap();
+        }
+        pending
+            .insert_datagram(
+                3,
+                fec::MAX_PENDING_OBJECTS as u64,
+                oti,
+                id.clone(),
+                data.clone(),
+            )
+            .unwrap();
+        pending.pending_groups[0].segments[0].created = Instant::now() - Duration::from_millis(100);
+
+        let seq = fec::MAX_PENDING_OBJECTS as u64 + 1;
+        pending.insert_datagram(2, seq, oti, id, data).unwrap();
+        assert_eq!(pending.pending_groups.len(), 2);
+        assert_eq!(pending.pending_groups[0].group_seq, 2);
+        assert!(pending.pending_groups[0].contains(seq));
+        assert_eq!(pending.pending_groups[1].group_seq, 3);
+        assert!(!pending.pending_groups[1].contains(seq));
+        assert!(
+            pending
+                .pending_groups
+                .iter()
+                .map(|group| group.usage().0)
+                .sum::<usize>()
+                <= fec::MAX_PENDING_OBJECTS
+        );
+    }
+
+    #[test]
+    fn admission_does_not_reintroduce_a_sequence_retired_during_eviction() {
+        let (oti, id, data) = incomplete_symbol();
+        let mut pending = PendingGroups::new();
+        for seq in 2..=fec::MAX_PENDING_OBJECTS as u64 + 1 {
+            pending
+                .insert_datagram(2, seq, oti, id.clone(), data.clone())
+                .unwrap();
+        }
+        pending.pending_groups[0].segments[0].created = Instant::now() - Duration::from_millis(100);
+
+        pending.insert_datagram(1, 1, oti, id, data).unwrap();
+        assert_eq!(pending.retired_through, Some(2));
+        assert_eq!(pending.pending_groups.len(), 1);
+        assert_eq!(pending.pending_groups[0].group_seq, 2);
+        assert!(!pending.pending_groups[0].contains(1));
+        assert!(!pending.pending_groups[0].contains(2));
+        assert!(
+            pending
+                .pending_groups
+                .iter()
+                .map(|group| group.usage().0)
+                .sum::<usize>()
+                <= fec::MAX_PENDING_OBJECTS
+        );
     }
 
     async fn send_frame(
