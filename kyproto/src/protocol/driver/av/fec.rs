@@ -122,7 +122,11 @@ pub(super) fn check_pending(
         8 * 1024 * 1024
     };
     if objects >= MAX_PENDING_OBJECTS || additional > limit || bytes > limit - additional {
-        return Err(invalid("pending receive budget exceeded"));
+        // Counts only, so a report shows which bound was reached.
+        return Err(invalid(&format!(
+            "pending receive budget exceeded \
+             (objects {objects}/{MAX_PENDING_OBJECTS}, bytes {bytes}+{additional}/{limit})"
+        )));
     }
     Ok(())
 }
