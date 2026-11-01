@@ -43,7 +43,6 @@ impl super::Serializable for DataPacket {
         }
         let size = self.payload.len() as u32;
 
-
         writer.write_all(&size.to_be_bytes()).await?;
         writer.write_all(&self.payload).await?;
 
