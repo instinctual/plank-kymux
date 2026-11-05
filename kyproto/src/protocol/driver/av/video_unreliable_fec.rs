@@ -910,12 +910,19 @@ impl ConfigPacket {
 #[derive(Debug)]
 struct PendingGroups {
     pending_groups: Vec<PendingGroup>,
+    /// The highest sequence retired at the budget; later symbols for it or
+    /// anything older are ignored.
+    retired_through: Option<u64>,
+    /// FEC accounting for retired objects, reported with the next packet.
+    retired_stats: VideoFecStats,
 }
 
 impl PendingGroups {
     fn new() -> Self {
         Self {
             pending_groups: Vec::new(),
+            retired_through: None,
+            retired_stats: VideoFecStats::default(),
         }
     }
 
@@ -935,6 +942,66 @@ impl PendingGroups {
                 Ok(index)
             }
         }
+    }
+
+    /// Admits one more pending object. While nothing can be forwarded (for
+    /// example, a group's config is delayed on the reliable stream) pending
+    /// video otherwise grows until the budget ends the stream. At the budget,
+    /// media that has waited longer than the reorder window is obsolete: the
+    /// oldest is retired as lost, oldest first, so the stream can recover. A
+    /// burst of fresh objects that alone exceeds the budget is still rejected.
+    fn admit(&mut self, additional: usize) -> Result<(), ProtocolError> {
+        let now = Instant::now();
+        loop {
+            let error = match self.check_capacity(additional) {
+                Ok(()) => return Ok(()),
+                Err(error) => error,
+            };
+            if !self.retire_oldest_media(now) {
+                return Err(error);
+            }
+        }
+    }
+
+    /// Retires the pending media object with the lowest sequence if it is
+    /// stale. Configs are never retired, so media still cannot be forwarded
+    /// before its config.
+    fn retire_oldest_media(&mut self, now: Instant) -> bool {
+        let mut oldest: Option<(usize, bool, u64, Instant)> = None;
+        for (index, group) in self.pending_groups.iter().enumerate() {
+            let segment = group
+                .segments
+                .first()
+                .map(|s| (false, s.kypacket_seq, s.created));
+            let datagram = group
+                .datagrams
+                .front()
+                .map(|d| (true, d.kypacket_seq, d.instant));
+            for (is_datagram, seq, instant) in segment.into_iter().chain(datagram) {
+                if oldest.is_none_or(|(_, _, oldest_seq, _)| seq < oldest_seq) {
+                    oldest = Some((index, is_datagram, seq, instant));
+                }
+            }
+        }
+        let Some((index, is_datagram, seq, instant)) = oldest else {
+            return false;
+        };
+        if instant + VideoUnreliableFecProtocolRecvDriver::MAX_BUFFERING > now {
+            return false;
+        }
+        let group = &mut self.pending_groups[index];
+        let stats = if is_datagram {
+            group.datagrams.pop_front().map(|d| d.fec_stats)
+        } else {
+            Some(group.segments.remove(0).fec_stats())
+        };
+        self.retired_stats.accumulate(stats.unwrap_or_default());
+        self.retired_through = Some(self.retired_through.map_or(seq, |retired| retired.max(seq)));
+        if group.config_packet.is_none() && group.segments.is_empty() && group.datagrams.is_empty()
+        {
+            self.pending_groups.remove(index);
+        }
+        true
     }
 
     fn check_capacity(&self, additional: usize) -> Result<(), ProtocolError> {
@@ -957,7 +1024,7 @@ impl PendingGroups {
         if !media.header.is_config {
             return Err(fec::invalid("expected video config"));
         }
-        self.check_capacity(media.payload.len())?;
+        self.admit(media.payload.len())?;
         let index = self.prepare_pending_group(group_seq)?;
 
         let pending_group = &mut self.pending_groups[index];
@@ -980,17 +1047,37 @@ impl PendingGroups {
         data: Bytes,
     ) -> Result<(), ProtocolError> {
         fec::validate_oti(&oti, fec::MAX_VIDEO_PAYLOAD)?;
+        if self
+            .retired_through
+            .is_some_and(|retired| kypacket_seq <= retired)
+        {
+            // Late symbols of video already accounted as lost.
+            return Ok(());
+        }
         // The packet sequence cannot migrate between video config groups.
         for group in &self.pending_groups {
             if group.group_seq != group_seq && group.contains(kypacket_seq) {
                 return Err(fec::invalid("object changed video group"));
             }
         }
-        let index = self.prepare_pending_group(group_seq)?;
-        if !self.pending_groups[index].contains(kypacket_seq) {
-            self.check_capacity(fec::reservation(&oti))?;
+        let already_pending = self
+            .pending_groups
+            .iter()
+            .any(|group| group.group_seq == group_seq && group.contains(kypacket_seq));
+        if !already_pending {
+            self.admit(fec::reservation(&oti))?;
+            // Admission can remove groups and advance the retirement boundary.
+            // Do not recreate media that became obsolete during that eviction.
+            if self
+                .retired_through
+                .is_some_and(|retired| kypacket_seq <= retired)
+            {
+                return Ok(());
+            }
         }
-
+        // Resolve by identity only after admission has finished mutating the
+        // group vector; an earlier index could now select a different group.
+        let index = self.prepare_pending_group(group_seq)?;
         let pending_group = &mut self.pending_groups[index];
         pending_group.insert_datagram(kypacket_seq, oti, payload_id, data)
     }
@@ -1071,7 +1158,7 @@ impl PendingGroups {
             NextPacket::None => Action::None,
             NextPacket::Deadline(instant) => Action::Deadline(instant),
             NextPacket::Ready(packet_ref) => {
-                let mut fec_stats = VideoFecStats::default();
+                let mut fec_stats = std::mem::take(&mut self.retired_stats);
                 if packet_ref.pending_group_index > 0 {
                     for pending_group in self.pending_groups.drain(..packet_ref.pending_group_index)
                     {
@@ -1248,6 +1335,7 @@ struct DatagramSegments {
     kypacket_seq: u64,
     decoder: fec::ObjectDecoder,
     assembled: Option<Vec<u8>>,
+    created: Instant, // first symbol received
 }
 
 impl DatagramSegments {
@@ -1259,6 +1347,7 @@ impl DatagramSegments {
             kypacket_seq,
             decoder: fec::ObjectDecoder::new(oti, fec::MAX_VIDEO_PAYLOAD)?,
             assembled: None,
+            created: Instant::now(),
         })
     }
 
@@ -1423,6 +1512,248 @@ mod tests {
             stats.unrecovered_source_symbols,
             stats.missing_source_symbols
         );
+    }
+
+    /// Valid frame bytes whose pts is its kypacket sequence, so the client side
+    /// of the test can tell exactly which frames were forwarded.
+    fn frame_bytes(seq: u32) -> Vec<u8> {
+        let size = 4000;
+        let header = MediaPacketHeader {
+            is_config: false,
+            is_key: false,
+            pts: u64::from(seq),
+            size,
+        };
+        let mut data = header.serialize().to_vec();
+        data.extend((0..size).map(|i| (i % 251) as u8));
+        data
+    }
+
+    fn incomplete_symbol() -> (
+        raptorq::ObjectTransmissionInformation,
+        raptorq::PayloadId,
+        Bytes,
+    ) {
+        let encoder = raptorq::Encoder::with_defaults(&frame_bytes(1), 1200);
+        let (id, data) = encoder.get_encoded_packets(0).remove(0).split();
+        (encoder.get_config(), id, Bytes::from(data))
+    }
+
+    #[test]
+    fn eviction_of_earlier_group_preserves_incoming_group() {
+        let (oti, id, data) = incomplete_symbol();
+        let mut pending = PendingGroups::new();
+        pending
+            .insert_datagram(1, 1, oti, id.clone(), data.clone())
+            .unwrap();
+        for seq in 2..=fec::MAX_PENDING_OBJECTS as u64 {
+            pending
+                .insert_datagram(2, seq, oti, id.clone(), data.clone())
+                .unwrap();
+        }
+        pending.pending_groups[0].segments[0].created = Instant::now() - Duration::from_millis(100);
+
+        let seq = fec::MAX_PENDING_OBJECTS as u64 + 1;
+        pending.insert_datagram(2, seq, oti, id, data).unwrap();
+        assert_eq!(pending.pending_groups.len(), 1);
+        assert_eq!(pending.pending_groups[0].group_seq, 2);
+        assert!(pending.pending_groups[0].contains(seq));
+        assert!(
+            pending
+                .pending_groups
+                .iter()
+                .map(|group| group.usage().0)
+                .sum::<usize>()
+                <= fec::MAX_PENDING_OBJECTS
+        );
+    }
+
+    #[test]
+    fn eviction_cannot_insert_into_another_group_at_shifted_index() {
+        let (oti, id, data) = incomplete_symbol();
+        let mut pending = PendingGroups::new();
+        pending
+            .insert_datagram(1, 1, oti, id.clone(), data.clone())
+            .unwrap();
+        for seq in 2..fec::MAX_PENDING_OBJECTS as u64 {
+            pending
+                .insert_datagram(2, seq, oti, id.clone(), data.clone())
+                .unwrap();
+        }
+        pending
+            .insert_datagram(
+                3,
+                fec::MAX_PENDING_OBJECTS as u64,
+                oti,
+                id.clone(),
+                data.clone(),
+            )
+            .unwrap();
+        pending.pending_groups[0].segments[0].created = Instant::now() - Duration::from_millis(100);
+
+        let seq = fec::MAX_PENDING_OBJECTS as u64 + 1;
+        pending.insert_datagram(2, seq, oti, id, data).unwrap();
+        assert_eq!(pending.pending_groups.len(), 2);
+        assert_eq!(pending.pending_groups[0].group_seq, 2);
+        assert!(pending.pending_groups[0].contains(seq));
+        assert_eq!(pending.pending_groups[1].group_seq, 3);
+        assert!(!pending.pending_groups[1].contains(seq));
+        assert!(
+            pending
+                .pending_groups
+                .iter()
+                .map(|group| group.usage().0)
+                .sum::<usize>()
+                <= fec::MAX_PENDING_OBJECTS
+        );
+    }
+
+    #[test]
+    fn admission_does_not_reintroduce_a_sequence_retired_during_eviction() {
+        let (oti, id, data) = incomplete_symbol();
+        let mut pending = PendingGroups::new();
+        for seq in 2..=fec::MAX_PENDING_OBJECTS as u64 + 1 {
+            pending
+                .insert_datagram(2, seq, oti, id.clone(), data.clone())
+                .unwrap();
+        }
+        pending.pending_groups[0].segments[0].created = Instant::now() - Duration::from_millis(100);
+
+        pending.insert_datagram(1, 1, oti, id, data).unwrap();
+        assert_eq!(pending.retired_through, Some(2));
+        assert_eq!(pending.pending_groups.len(), 1);
+        assert_eq!(pending.pending_groups[0].group_seq, 2);
+        assert!(!pending.pending_groups[0].contains(1));
+        assert!(!pending.pending_groups[0].contains(2));
+        assert!(
+            pending
+                .pending_groups
+                .iter()
+                .map(|group| group.usage().0)
+                .sum::<usize>()
+                <= fec::MAX_PENDING_OBJECTS
+        );
+    }
+
+    async fn send_frame(
+        tx: &mpsc::Sender<Result<RecvMsg, ProtocolError>>,
+        group: u32,
+        seq: u32,
+    ) -> bool {
+        let encoder = raptorq::Encoder::with_defaults(&frame_bytes(seq), 1200);
+        let oti = encoder.get_config();
+        for packet in encoder.get_encoded_packets(2) {
+            let mut datagram = vec![0u8; 2];
+            datagram.extend(seq.to_be_bytes());
+            datagram.extend(group.to_be_bytes());
+            datagram.extend(oti.serialize());
+            datagram.extend(packet.serialize());
+            let msg = DatagramMsg::parse(Bytes::from(datagram)).unwrap();
+            if tx.send(Ok(RecvMsg::Datagram(msg))).await.is_err() {
+                return false;
+            }
+        }
+        true
+    }
+
+    async fn send_config(
+        tx: &mpsc::Sender<Result<RecvMsg, ProtocolError>>,
+        group: u32,
+        seq: u32,
+    ) -> bool {
+        let packet = AVPacket::Media(MediaPacket {
+            header: MediaPacketHeader {
+                is_config: true,
+                is_key: true,
+                pts: u64::from(seq),
+                size: 0,
+            },
+            payload: Bytes::new(),
+        });
+        tx.send(Ok(RecvMsg::Stream(StreamMsg {
+            packet,
+            raw_kypacket_seq: seq,
+            raw_group_seq: group,
+        })))
+        .await
+        .is_ok()
+    }
+
+    #[tokio::test]
+    async fn delayed_config_stall_then_burst_recovers_within_pending_budget() {
+        // A keyframe request starts group 2. Its config waits on the reliable
+        // stream behind loss recovery while its frames keep arriving as valid
+        // FEC datagrams; then the config and a burst arrive together.
+        let (tx, rx) = mpsc::channel(16);
+        let (client_tx, mut client_rx) = mpsc::channel(16);
+        let stats = KyArc::new(KyMutex::new(ProtocolStats::default()));
+        let process = tokio::spawn(VideoUnreliableFecProtocolRecvDriver::process(
+            rx,
+            client_tx,
+            stats.clone(),
+        ));
+        let client = tokio::spawn(async move {
+            let mut forwarded = Vec::new();
+            while let Some(Ok(AVPacket::Media(media))) = client_rx.recv().await {
+                forwarded.push((media.header.is_config, media.header.pts));
+            }
+            forwarded
+        });
+
+        let mut open = send_config(&tx, 1, 0).await;
+        for seq in 1..=4 {
+            open &= send_frame(&tx, 1, seq).await;
+        }
+        // The stall: 200 frames of group 2 over about 200 ms, without its config.
+        for seq in 6..=205 {
+            if !open {
+                break;
+            }
+            open &= send_frame(&tx, 2, seq).await;
+            if seq % 20 == 0 {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        }
+        // The burst: the delayed config, then 60 frames back to back.
+        open &= send_config(&tx, 2, 5).await;
+        for seq in 206..=265 {
+            if !open {
+                break;
+            }
+            open &= send_frame(&tx, 2, seq).await;
+        }
+        drop(tx);
+
+        let result = tokio::time::timeout(Duration::from_secs(10), process)
+            .await
+            .expect("the receiver must not hang")
+            .unwrap();
+        let forwarded = client.await.unwrap();
+        assert!(
+            open,
+            "the receiver stopped reading during the stall: {result:?}"
+        );
+        result.expect("a stall with a delayed config must not end the stream");
+
+        // Config ordering and strictly increasing order are preserved.
+        let configs: Vec<u64> = forwarded.iter().filter(|f| f.0).map(|f| f.1).collect();
+        assert_eq!(configs, vec![0, 5]);
+        assert!(forwarded.windows(2).all(|pair| pair[0].1 < pair[1].1));
+        let after_config = forwarded.iter().position(|f| *f == (true, 5)).unwrap();
+        assert!(forwarded[..after_config].iter().all(|f| f.1 <= 4));
+        assert_eq!(
+            forwarded.last(),
+            Some(&(false, 265)),
+            "the stream recovered"
+        );
+
+        // Every kypacket was either forwarded or accounted as lost, and no more
+        // than the pending budget was ever held while the config was missing.
+        let dropped = stats.lock().dropped_packets.unwrap_or_default();
+        assert_eq!(forwarded.len() as u64 + dropped, 266);
+        let first_held = forwarded[after_config + 1].1;
+        assert!(dropped > 0 && first_held > 6);
+        assert!(265 - first_held + 1 < fec::MAX_PENDING_OBJECTS as u64 + 60);
     }
 }
 
