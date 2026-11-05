@@ -209,6 +209,132 @@ fn video_pending_count_groups_and_byte_reservations_are_bounded() {
 }
 
 #[test]
+fn video_byte_budget_retires_stale_media_but_preserves_config_and_fresh_media() {
+    let oti = raptorq::ObjectTransmissionInformation::with_defaults(
+        (fec::MAX_VIDEO_PAYLOAD + KYPACKET_HEADER_SIZE) as u64,
+        1280,
+    );
+    let id = raptorq::PayloadId::new(0, 0);
+    let data = Bytes::from(vec![0; usize::from(oti.symbol_size())]);
+    let mut groups = PendingGroups::new();
+    groups.insert_stream_packet(1, 0, config()).unwrap();
+    groups
+        .insert_datagram(1, 1, oti, id.clone(), data.clone())
+        .unwrap();
+    let original_usage = groups.pending_groups[0].usage();
+    // Control age explicitly so a slow CI worker cannot turn the fresh-limit
+    // assertion into a stale-frame eviction.
+    groups.pending_groups[0].segments[0].created = Instant::now() + Duration::from_secs(60);
+    assert!(
+        groups
+            .insert_datagram(1, 2, oti, id.clone(), data.clone())
+            .is_err()
+    );
+    assert_eq!(groups.pending_groups[0].usage(), original_usage);
+    assert_eq!(groups.retired_through, None);
+
+    groups.pending_groups[0].segments[0].created = Instant::now() - Duration::from_millis(100);
+    groups
+        .insert_datagram(1, 2, oti, id.clone(), data.clone())
+        .unwrap();
+    assert_eq!(groups.pending_groups[0].usage(), original_usage);
+    assert!(groups.check_capacity(0).is_ok());
+    assert!(groups.pending_groups[0].config_packet.is_ready());
+    assert!(!groups.pending_groups[0].contains(1));
+    assert!(groups.pending_groups[0].contains(2));
+    // A late original cannot recreate the retired frame or charge it twice.
+    groups.insert_datagram(1, 1, oti, id, data).unwrap();
+    assert_eq!(groups.pending_groups[0].usage(), original_usage);
+    let Action::Packet {
+        kypacket_seq: 0,
+        packet: AVPacket::Media(media),
+        fec_stats,
+    } = groups.take_next_packet(0)
+    else {
+        panic!("budget retirement lost the reliable config");
+    };
+    assert!(media.header.is_config);
+    let sources = oti.transfer_length().div_ceil(u64::from(oti.symbol_size()));
+    assert_eq!(fec_stats.source_symbols, sources);
+    assert_eq!(fec_stats.missing_source_symbols, sources - 1);
+    assert_eq!(fec_stats.unrecovered_source_symbols, sources - 1);
+    assert_eq!(groups.retired_stats, VideoFecStats::default());
+}
+
+#[test]
+fn video_retirement_accounts_complete_and_incomplete_frames_once() {
+    let encoder = raptorq::Encoder::with_defaults(&media_bytes(1000), 128);
+    let oti = encoder.get_config();
+    let packets = encoder.get_encoded_packets(3);
+    let (id, data) = packets[0].clone().split();
+    let data = Bytes::from(data);
+    let mut groups = PendingGroups::new();
+    // Frame 1 is reconstructed with a missing original; all the other frames
+    // remain incomplete while the reliable config is delayed.
+    for packet in packets.iter().skip(1) {
+        let (id, data) = packet.clone().split();
+        groups
+            .insert_datagram(1, 1, oti, id, Bytes::from(data))
+            .unwrap();
+    }
+    for seq in 2..=fec::MAX_PENDING_OBJECTS as u64 {
+        groups
+            .insert_datagram(1, seq, oti, id.clone(), data.clone())
+            .unwrap();
+    }
+    let stale = Instant::now() - Duration::from_millis(100);
+    groups.pending_groups[0].datagrams[0].instant = stale;
+    groups.pending_groups[0].segments[0].created = stale;
+    groups.insert_stream_packet(1, 0, config()).unwrap();
+    groups
+        .insert_datagram(1, 129, oti, id.clone(), data.clone())
+        .unwrap();
+    for seq in [1, 2] {
+        groups
+            .insert_datagram(1, seq, oti, id.clone(), data.clone())
+            .unwrap();
+        assert!(!groups.pending_groups[0].contains(seq));
+    }
+    let Action::Packet {
+        kypacket_seq: 0,
+        fec_stats,
+        ..
+    } = groups.take_next_packet(0)
+    else {
+        panic!("config must precede remaining video");
+    };
+    let sources = oti.transfer_length().div_ceil(u64::from(oti.symbol_size()));
+    assert_eq!(fec_stats.source_symbols, 2 * sources);
+    assert_eq!(fec_stats.missing_source_symbols, sources);
+    assert_eq!(fec_stats.unrecovered_source_symbols, sources - 1);
+
+    // Completing frame 3 resumes delivery after the gap without reporting
+    // either retired frame's FEC totals a second time.
+    for packet in packets {
+        let (id, data) = packet.split();
+        groups
+            .insert_datagram(1, 3, oti, id, Bytes::from(data))
+            .unwrap();
+    }
+    groups.pending_groups[0].datagrams[0].instant = stale;
+    let Action::Packet {
+        kypacket_seq: 3,
+        fec_stats,
+        ..
+    } = groups.take_next_packet(1)
+    else {
+        panic!("video must resume after retired frames");
+    };
+    assert_eq!(
+        fec_stats,
+        VideoFecStats {
+            source_symbols: sources,
+            ..VideoFecStats::default()
+        }
+    );
+}
+
+#[test]
 fn video_reassembly_rejects_forged_media_header() {
     let encoder = raptorq::Encoder::with_defaults(&[0; 100], 128);
     let oti = encoder.get_config();
