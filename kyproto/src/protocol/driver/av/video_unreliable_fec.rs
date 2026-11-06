@@ -336,111 +336,63 @@ impl VideoUnreliableFecProtocolSendDriver {
         data.put(&header[..]);
         data.put(&packet.payload[..]);
 
-        #[cfg(feature = "source-first-fec")]
-        if cfg!(target_os = "macos") {
-            return self
-                .send_source_first(&data, max_payload_size, timing)
-                .await;
-        }
-
-        #[cfg(feature = "sender-timing")]
-        let copied = timing.map(|_| std::time::Instant::now());
-        let encoder = raptorq::Encoder::with_defaults(&data, max_payload_size);
-        #[cfg(feature = "sender-timing")]
-        let initialized = timing.map(|_| std::time::Instant::now());
-        let oti = encoder.get_config();
-        let symbol_size = oti.symbol_size() as usize;
-
-        let source_symbols = kypacket_size.div_ceil(symbol_size);
-
-        // Add 30% repair packets (at least 2 packets)
-        let repair_symbols = ((source_symbols as f32 * 0.3).ceil() as u32).max(2);
-
-        let oti = oti.serialize();
-
-        let encoded_packets = encoder.get_encoded_packets(repair_symbols);
-        #[cfg(feature = "sender-timing")]
-        if let (Some(start), Some(copied), Some(initialized)) = (timing, copied, initialized) {
-            kynet::sender_timing::update(|m| {
-                m.fec_copy_ns += kynet::sender_timing::ns(copied - start);
-                m.fec_encoder_ns += kynet::sender_timing::ns(initialized - copied);
-                m.fec_repair_ns += kynet::sender_timing::ns(initialized.elapsed());
-            });
-        }
-        for encoded_packet in encoded_packets.into_iter() {
-            let kypacket_seq = self.kypacket_seq;
-            let group_seq = self.group_seq;
-
-            let (payload_id, data) = encoded_packet.split();
-            let raw_payload_id = payload_id.serialize();
-            let mut buf = BytesMut::with_capacity(DATAGRAM_HEADER_SIZE + data.len());
-            self.ky_channel.write_datagram_header(&mut buf);
-            buf.put_u32(kypacket_seq);
-            buf.put_u32(group_seq);
-            buf.put(&oti[..]);
-            buf.put(&raw_payload_id[..]);
-            buf.put(&data[..]);
-
-            debug!("send datagram {kypacket_seq:?}:{payload_id:?} (group={group_seq:?})");
-
-            self.ky_channel
-                .send_datagram(buf.freeze())
-                .await
-                .map_err(ProtocolError::new)?;
-        }
-
-        #[cfg(feature = "sender-timing")]
-        if let Some(start) = timing {
-            kynet::sender_timing::update(|m| {
-                m.fec_total_ns += kynet::sender_timing::ns(start.elapsed())
-            });
-        }
-        Ok(())
-    }
-
-    #[cfg(feature = "source-first-fec")]
-    async fn send_source_first(
-        &mut self,
-        data: &[u8],
-        max_payload_size: u16,
-        timing: Option<std::time::Instant>,
-    ) -> Result<(), ProtocolError> {
         let config = raptorq::ObjectTransmissionInformation::with_defaults(
             data.len() as u64,
             max_payload_size,
         );
-        let sources = super::source_first::source_packets(data, &config);
-        let repairs = ((sources.len() as f32 * 0.3).ceil() as u32).max(2);
+        let source_symbols = data.len().div_ceil(config.symbol_size() as usize);
+        let repairs = ((source_symbols as f32 * 0.3).ceil() as u32).max(2);
+        let oti = config.serialize();
+        #[cfg(feature = "sender-timing")]
         if let Some(start) = timing {
             kynet::sender_timing::update(|m| {
                 m.fec_copy_ns += kynet::sender_timing::ns(start.elapsed())
             });
         }
-        let oti = config.serialize();
-        // All original symbols leave before matrix solving/repair generation.
-        // Packet IDs, OTI, repair count and repair bytes remain unchanged.
-        for source in sources {
+
+        // Every platform submits all originals before solving the repair
+        // matrix. Packet IDs, OTI, repair count and repair bytes are unchanged.
+        // Generate one symbol at a time so the first packet does not wait for
+        // frame-sized source-packet allocation and copying.
+        let mut sources = super::source_first::source_packets(&data, &config);
+        loop {
+            #[cfg(feature = "sender-timing")]
+            let prepare = timing.map(|_| std::time::Instant::now());
+            let source = sources.next();
+            #[cfg(feature = "sender-timing")]
+            if let Some(start) = prepare {
+                kynet::sender_timing::update(|m| {
+                    m.fec_copy_ns += kynet::sender_timing::ns(start.elapsed())
+                });
+            }
+            let Some(source) = source else { break };
             self.send_fec_packet(oti, source).await?;
         }
-        let prepare = std::time::Instant::now();
-        let encoder = raptorq::Encoder::new(data, config);
-        if timing.is_some() {
+
+        #[cfg(feature = "sender-timing")]
+        let prepare = timing.map(|_| std::time::Instant::now());
+        let encoder = raptorq::Encoder::new(&data, config);
+        #[cfg(feature = "sender-timing")]
+        if let Some(start) = prepare {
             kynet::sender_timing::update(|m| {
-                m.fec_encoder_ns += kynet::sender_timing::ns(prepare.elapsed())
+                m.fec_encoder_ns += kynet::sender_timing::ns(start.elapsed())
             });
         }
         for block in encoder.get_block_encoders() {
-            let prepare = std::time::Instant::now();
+            #[cfg(feature = "sender-timing")]
+            let prepare = timing.map(|_| std::time::Instant::now());
             let packets = block.repair_packets(0, repairs);
-            if timing.is_some() {
+            #[cfg(feature = "sender-timing")]
+            if let Some(start) = prepare {
                 kynet::sender_timing::update(|m| {
-                    m.fec_repair_ns += kynet::sender_timing::ns(prepare.elapsed())
+                    m.fec_repair_ns += kynet::sender_timing::ns(start.elapsed())
                 });
             }
             for packet in packets {
                 self.send_fec_packet(oti, packet).await?;
             }
         }
+        #[cfg(feature = "sender-timing")]
         if let Some(start) = timing {
             kynet::sender_timing::update(|m| {
                 m.fec_total_ns += kynet::sender_timing::ns(start.elapsed())
@@ -449,7 +401,6 @@ impl VideoUnreliableFecProtocolSendDriver {
         Ok(())
     }
 
-    #[cfg(feature = "source-first-fec")]
     async fn send_fec_packet(
         &self,
         oti: [u8; 12],
