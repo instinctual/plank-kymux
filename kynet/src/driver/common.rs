@@ -78,6 +78,7 @@ impl CommonServer {
 
         // Configure transport
         let mut transport_config = quinn::TransportConfig::default();
+        transport_config.datagram_send_buffer_size(super::quinn::DATAGRAM_SEND_BUFFER_BYTES);
         transport_config.max_idle_timeout(
             options
                 .max_idle_timeout

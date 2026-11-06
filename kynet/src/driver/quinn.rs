@@ -42,6 +42,12 @@ use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 /// media, not silently corrupt frames when the first repair is needed.
 pub const KYMUX_ALPN: &[u8] = b"plank-native/2";
 
+/// Bounded burst capacity shared by native QUIC senders. A 1.6 MB keyframe
+/// plus its RaptorQ repairs exceeds Quinn's 1 MiB default before the network
+/// worker necessarily drains it. This does not defer transmission or change
+/// the congestion window, and the buffer is allocated as needed.
+pub const DATAGRAM_SEND_BUFFER_BYTES: usize = 4 * 1024 * 1024;
+
 pub(super) fn handshake_error(error: quinn::ConnectionError) -> ConnectionError {
     // TLS no_application_protocol (120), carried in QUIC's crypto error space
     // (0x100). Quinn distinguishes a locally detected error from a peer close.
@@ -146,6 +152,7 @@ impl QuinnConnectionDriver {
 
         // Configure transport options
         let mut transport_config = quinn::TransportConfig::default();
+        transport_config.datagram_send_buffer_size(DATAGRAM_SEND_BUFFER_BYTES);
         transport_config.max_idle_timeout(
             options
                 .max_idle_timeout
