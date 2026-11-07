@@ -64,15 +64,15 @@ async fn video_drains_completed_media_after_late_config_without_another_datagram
 }
 
 fn config() -> AVPacket {
-    AVPacket::Media(MediaPacket {
-        header: MediaPacketHeader {
+    AVPacket::Media(MediaPacket::new(
+        MediaPacketHeader {
             is_config: true,
             is_key: true,
             pts: 0,
             size: 0,
         },
-        payload: Bytes::new(),
-    })
+        Bytes::new(),
+    ))
 }
 
 #[test]

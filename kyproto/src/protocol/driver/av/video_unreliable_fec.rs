@@ -328,13 +328,7 @@ impl VideoUnreliableFecProtocolSendDriver {
 
         let max_payload_size = (max_datagram_size - DATAGRAM_HEADER_SIZE) as u16;
 
-        let header = packet.header.serialize();
-        let kypacket_size = header.len() + packet.payload.len();
-
-        // TODO avoid a payload copy
-        let mut data = BytesMut::with_capacity(kypacket_size);
-        data.put(&header[..]);
-        data.put(&packet.payload[..]);
+        let data = packet.into_serialized();
 
         let config = raptorq::ObjectTransmissionInformation::with_defaults(
             data.len() as u64,
@@ -1612,15 +1606,15 @@ mod tests {
         group: u32,
         seq: u32,
     ) -> bool {
-        let packet = AVPacket::Media(MediaPacket {
-            header: MediaPacketHeader {
+        let packet = AVPacket::Media(MediaPacket::new(
+            MediaPacketHeader {
                 is_config: true,
                 is_key: true,
                 pts: u64::from(seq),
                 size: 0,
             },
-            payload: Bytes::new(),
-        });
+            Bytes::new(),
+        ));
         tx.send(Ok(RecvMsg::Stream(StreamMsg {
             packet,
             raw_kypacket_seq: seq,

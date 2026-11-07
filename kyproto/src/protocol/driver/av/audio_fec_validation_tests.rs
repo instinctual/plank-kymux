@@ -35,15 +35,15 @@ async fn audio_drains_completed_media_after_late_config_without_another_datagram
     }
     tx.send(Ok(RecvMsg::Stream(StreamMsg {
         raw_kypacket_seq: 0,
-        packet: AVPacket::Media(MediaPacket {
-            header: MediaPacketHeader {
+        packet: AVPacket::Media(MediaPacket::new(
+            MediaPacketHeader {
                 is_config: true,
                 is_key: true,
                 pts: 0,
                 size: 0,
             },
-            payload: Bytes::new(),
-        }),
+            Bytes::new(),
+        )),
     })))
     .await
     .unwrap();

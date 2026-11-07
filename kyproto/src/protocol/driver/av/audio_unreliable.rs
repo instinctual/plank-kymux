@@ -706,7 +706,7 @@ impl DatagramSegments {
         let header = MediaPacketHeader::deserialize(&data[..AVPacketHeader::SERIALIZED_SIZE]);
 
         let payload = data.slice(AVPacketHeader::SERIALIZED_SIZE..);
-        let packet = AVPacket::Media(MediaPacket { header, payload });
+        let packet = AVPacket::Media(MediaPacket::new(header, payload));
 
         DatagramPacket {
             packet,

@@ -49,6 +49,7 @@ pub(crate) struct RouterClient {
     tx_unistreams: mpsc::Sender<RecvStream>,
     tx_bistreams: mpsc::Sender<(SendStream, RecvStream)>,
     tx_datagrams: mpsc::Sender<Bytes>,
+    datagram_drops: u64,
 }
 
 pub(crate) struct Router {
@@ -65,8 +66,9 @@ impl Router {
         let clients2 = clients.clone();
         let accept_uni_task = Task::spawn_task(
             async move {
-                if let Err(err) = Self::accept_channels_uni(conn2, clients2).await {
+                if let Err(err) = Self::accept_channels_uni(conn2.clone(), clients2).await {
                     error!("{err:?}");
+                    conn2.close(1, "accept_uni stopped");
                 }
             },
             "accept_uni",
@@ -76,8 +78,9 @@ impl Router {
         let clients2 = clients.clone();
         let accept_bi_task = Task::spawn_task(
             async move {
-                if let Err(err) = Self::accept_channels_bi(conn2, clients2).await {
+                if let Err(err) = Self::accept_channels_bi(conn2.clone(), clients2).await {
                     error!("{err:?}");
+                    conn2.close(1, "accept_bi stopped");
                 }
             },
             "accept_bi",
@@ -87,8 +90,9 @@ impl Router {
         let clients2 = clients.clone();
         let recv_datagrams_task = Task::spawn_task(
             async move {
-                if let Err(err) = Self::recv_channels_datagrams(conn2, clients2).await {
+                if let Err(err) = Self::recv_channels_datagrams(conn2.clone(), clients2).await {
                     error!("{err:?}");
+                    conn2.close(1, "recv_datagrams stopped");
                 }
             },
             "recv_datagrams",
@@ -105,7 +109,8 @@ impl Router {
     pub fn register(&self, endpoint_id: u16) -> Result<KyChannel, EndpointAlreadyRegistered> {
         let (tx_unistreams, rx_unistreams) = mpsc::channel(8);
         let (tx_bistreams, rx_bistreams) = mpsc::channel(8);
-        let (tx_datagrams, rx_datagrams) = mpsc::channel(16);
+        // Admit a bounded QUIC receive burst without blocking other lanes.
+        let (tx_datagrams, rx_datagrams) = mpsc::channel(256);
 
         let mut clients = self.clients.lock();
         match clients.entry(endpoint_id) {
@@ -114,6 +119,7 @@ impl Router {
                 tx_unistreams,
                 tx_bistreams,
                 tx_datagrams,
+                datagram_drops: 0,
             }),
         };
 
@@ -212,6 +218,33 @@ impl Router {
         }
     }
 
+    // A slow decoder must not stall other media lanes. These are unreliable
+    // datagrams: dropping on bounded admission preserves FEC/recovery semantics.
+    // Sequence-gap telemetry accounts for the loss; log local queue pressure
+    // separately so it is not mistaken for a network-only failure.
+    fn dispatch_datagram(clients: &KyArc<KyMutex<ClientMap>>, datagram: Bytes) {
+        if datagram.len() < 2 {
+            return;
+        }
+        let id = u16::from_be_bytes([datagram[0], datagram[1]]);
+        let mut clients = clients.lock();
+        let Some(client) = clients.get_mut(&id) else {
+            return;
+        };
+        match client.tx_datagrams.try_send(datagram) {
+            Ok(()) | Err(mpsc::error::TrySendError::Closed(_)) => {}
+            Err(mpsc::error::TrySendError::Full(_)) => {
+                client.datagram_drops = client.datagram_drops.saturating_add(1);
+                if client.datagram_drops.is_power_of_two() {
+                    warn!(
+                        "endpoint {id:X} datagram queue drops={}",
+                        client.datagram_drops
+                    );
+                }
+            }
+        }
+    }
+
     async fn recv_channels_datagrams(
         conn: Connection,
         clients: KyArc<KyMutex<ClientMap>>,
@@ -221,26 +254,7 @@ impl Router {
                 .read_datagram()
                 .await
                 .map_err(|err| RouterError(format!("read_datagram() failed: {err:?}")))?;
-            if datagram.len() >= 2 {
-                let endpoint_id = u16::from_be_bytes((&datagram[..2]).try_into().unwrap());
-                let tx = if let Some(client) = clients.lock().get_mut(&endpoint_id) {
-                    Some(client.tx_datagrams.clone())
-                } else {
-                    None
-                };
-
-                if let Some(tx) = tx {
-                    tx.send(datagram).await.map_err(|err| {
-                        RouterError(format!("recv_datagram: channel closed: {err:?}"))
-                    })?;
-                } else {
-                    // Not a hard error, datagrams may be delivered at any
-                    // time, including once the endpoint has been removed
-                    warn!("Received a datagram with an unknown id: {endpoint_id:X}");
-                }
-            } else {
-                warn!("Datagram endpoint id too short, dropping");
-            }
+            Self::dispatch_datagram(&clients, datagram);
         }
     }
 }
@@ -251,6 +265,41 @@ impl Drop for Router {
         for task in tasks {
             task.cancel();
         }
+    }
+}
+
+#[cfg(test)]
+mod dispatch_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn saturated_or_retired_video_lane_does_not_block_audio() {
+        let clients = KyArc::new(KyMutex::new(HashMap::new()));
+        let (video_tx, mut video_rx) = mpsc::channel(1);
+        let (audio_tx, mut audio_rx) = mpsc::channel(1);
+        for (id, tx) in [(2, video_tx), (4, audio_tx)] {
+            clients.lock().insert(
+                id,
+                RouterClient {
+                    tx_unistreams: mpsc::channel(1).0,
+                    tx_bistreams: mpsc::channel(1).0,
+                    tx_datagrams: tx,
+                    datagram_drops: 0,
+                },
+            );
+        }
+        Router::dispatch_datagram(&clients, Bytes::from_static(&[0, 2, 1]));
+        Router::dispatch_datagram(&clients, Bytes::from_static(&[0, 2, 2]));
+        Router::dispatch_datagram(&clients, Bytes::from_static(&[0, 4, 3]));
+        assert_eq!(audio_rx.try_recv().unwrap()[2], 3);
+        assert_eq!(video_rx.try_recv().unwrap()[2], 1);
+        assert_eq!(clients.lock().get(&2).unwrap().datagram_drops, 1);
+        drop(video_rx);
+        Router::dispatch_datagram(&clients, Bytes::from_static(&[0, 2, 4]));
+        Router::dispatch_datagram(&clients, Bytes::from_static(&[0, 4, 5]));
+        assert_eq!(audio_rx.try_recv().unwrap()[2], 5);
+        Router::dispatch_datagram(&clients, Bytes::from_static(&[0]));
+        Router::dispatch_datagram(&clients, Bytes::from_static(&[0, 99]));
     }
 }
 

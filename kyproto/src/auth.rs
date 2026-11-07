@@ -100,7 +100,7 @@ impl UnauthenticatedConnection {
             .await
             .map_err(|_| ConnectionError("Dummy byte flush failed".to_string()))?;
 
-        let control = Control::start(tx, rx);
+        let control = Control::start(conn.clone(), tx, rx);
         let router = Router::start(conn.clone());
         Ok(Connection::new(conn, router, control, INITIATOR_SERVER))
     }

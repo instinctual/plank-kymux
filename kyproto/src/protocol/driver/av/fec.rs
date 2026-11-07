@@ -190,10 +190,10 @@ pub(super) fn media_packet(data: Vec<u8>) -> Result<AVPacket, ProtocolError> {
     if header.is_config || header.size as usize != data.len() - MEDIA_HEADER {
         return Err(invalid("reconstructed media type or length mismatch"));
     }
-    Ok(AVPacket::Media(MediaPacket {
+    Ok(AVPacket::Media(MediaPacket::new(
         header,
-        payload: Bytes::from(data).slice(MEDIA_HEADER..),
-    }))
+        Bytes::from(data).slice(MEDIA_HEADER..),
+    )))
 }
 
 // Codec/config records arrive on the companion reliable stream. Validate them
@@ -224,10 +224,7 @@ pub(super) async fn read_stream_packet(
         .read_exact(&mut payload)
         .await
         .map_err(ProtocolError::new)?;
-    Ok(AVPacket::Media(MediaPacket {
-        header,
-        payload: payload.freeze(),
-    }))
+    Ok(AVPacket::Media(MediaPacket::new(header, payload.freeze())))
 }
 
 #[cfg(test)]

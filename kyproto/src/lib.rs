@@ -324,7 +324,7 @@ impl Connection {
             .await
             .map_err(|_| ConnectionError("Dummy byte flush failed".to_string()))?;
 
-        let control = Control::start(tx, rx);
+        let control = Control::start(conn.clone(), tx, rx);
         let router = Router::start(conn.clone());
         Ok(Self::new(conn, router, control, INITIATOR_CLIENT))
     }
@@ -356,7 +356,7 @@ impl Connection {
             .await
             .map_err(|_| ConnectionError("Authentication confirmation failed".to_string()))?;
 
-        let control = Control::start(tx, rx);
+        let control = Control::start(conn.clone(), tx, rx);
         let router = Router::start(conn.clone());
         Ok(Self {
             conn,
@@ -375,7 +375,7 @@ impl Connection {
             .await
             .map_err(|_| ConnectionError("Dummy byte read failed".to_string()))?;
 
-        let control = Control::start(tx, rx);
+        let control = Control::start(conn.clone(), tx, rx);
         let router = Router::start(conn.clone());
         Ok(Self::new(conn, router, control, INITIATOR_SERVER))
     }

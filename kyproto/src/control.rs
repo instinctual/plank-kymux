@@ -24,12 +24,12 @@ use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 
 use kymux_util::*;
-use kynet::{RecvStream, SendStream};
+use kynet::{Connection, RecvStream, SendStream};
 #[allow(unused)]
 use log::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
 use tokio::sync::{mpsc, oneshot};
 
 #[derive(Debug, Error)]
@@ -43,7 +43,10 @@ pub(crate) enum ControlMsg {
     Ready { endpoint_id: u16 },
 }
 
+const MAX_CONTROL_MESSAGE_BYTES: usize = 1024;
+
 pub(crate) struct ReadyNotifier {
+    conn: Connection,
     endpoint_id: u16,
     tx: mpsc::Sender<ControlMsg>,
     rx: oneshot::Receiver<()>,
@@ -57,7 +60,10 @@ impl ReadyNotifier {
         };
         self.tx.send(msg).await?;
         // Await the other peer to be ready
-        self.rx.await?;
+        tokio::select! {
+            result = self.rx => result?,
+            _ = self.conn.closed() => return Err(ControlError("connection closed before endpoint ready".into())),
+        }
 
         Ok(())
     }
@@ -85,38 +91,44 @@ impl State {
 }
 
 pub(crate) struct Control {
+    conn: Connection,
     tx: mpsc::Sender<ControlMsg>,
     state: KyArc<State>,
     tasks: Vec<Task>,
 }
 
 impl Control {
-    pub(crate) fn start(stream_tx: SendStream, stream_rx: RecvStream) -> Self {
+    pub(crate) fn start(conn: Connection, stream_tx: SendStream, stream_rx: RecvStream) -> Self {
         let state = KyArc::new(State::new());
         let (control_tx, control_rx) = mpsc::channel(8);
 
         let control_tx2 = control_tx.clone();
         let state2 = state.clone();
+        let rx_conn = conn.clone();
         let rx_task = Task::spawn_task(
             async move {
                 if let Err(err) = Self::recv_msgs(stream_rx, state2, control_tx2).await {
                     error!("{err:?}");
                 }
+                rx_conn.close(1, "control receiver stopped");
             },
             "control recv_msgs",
         );
 
+        let tx_conn = conn.clone();
         let tx_task = Task::spawn_task(
             async move {
                 if let Err(err) = Self::send_msgs(control_rx, stream_tx).await {
                     error!("{err:?}");
                 }
+                tx_conn.close(1, "control sender stopped");
             },
             "control send_msgs",
         );
 
         let tasks = vec![rx_task, tx_task];
         Self {
+            conn,
             tx: control_tx,
             state,
             tasks,
@@ -141,7 +153,10 @@ impl Control {
         let msg = ControlMsg::RegisterEndpoint { endpoint_id };
         self.tx.send(msg).await?;
 
-        register_ack_recv.await?;
+        tokio::select! {
+            result = register_ack_recv => result?,
+            _ = self.conn.closed() => return Err(ControlError("connection closed before endpoint registration".into())),
+        }
         Ok(())
     }
 
@@ -165,6 +180,7 @@ impl Control {
                             .map_err(|_| ControlError("Ready sender error".to_string()))?;
 
                         Ok(ReadyNotifier {
+                            conn: self.conn.clone(),
                             endpoint_id,
                             tx: self.tx.clone(),
                             rx,
@@ -176,6 +192,7 @@ impl Control {
                 let (tx, rx) = oneshot::channel();
                 entry.insert(PendingReady::AwaitingRemote(tx));
                 Ok(ReadyNotifier {
+                    conn: self.conn.clone(),
                     endpoint_id,
                     tx: self.tx.clone(),
                     rx,
@@ -220,7 +237,9 @@ impl Control {
         Ok(())
     }
 
-    async fn recv_msg(rx: &mut RecvStream) -> Result<Option<ControlMsg>, ControlError> {
+    async fn recv_msg<R: AsyncRead + Unpin>(
+        rx: &mut R,
+    ) -> Result<Option<ControlMsg>, ControlError> {
         let mut buf = [0u8; 4];
         let res = rx.read_exact(&mut buf).await;
         if let Err(err) = &res
@@ -231,6 +250,9 @@ impl Control {
         res?;
 
         let len = u32::from_be_bytes(buf);
+        if len == 0 || len as usize > MAX_CONTROL_MESSAGE_BYTES {
+            return Err(ControlError("invalid control message length".into()));
+        }
         let mut buf = vec![0u8; len as usize];
         let res = rx.read_exact(&mut buf).await;
         if res
@@ -335,5 +357,52 @@ impl<T> From<mpsc::error::SendError<T>> for ControlError {
 impl From<oneshot::error::RecvError> for ControlError {
     fn from(err: oneshot::error::RecvError) -> Self {
         Self(format!("oneshot::Receiver error: {err}"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn rejects_unbounded_lengths_before_reading_payload() {
+        for length in [0u32, 1025, u32::MAX] {
+            // The writer stays open but sends no body. A bad length must fail
+            // immediately, without allocating or waiting for the body.
+            let (mut tx, mut rx) = tokio::io::duplex(16);
+            tx.write_all(&length.to_be_bytes()).await.unwrap();
+            let result = tokio::time::timeout(
+                std::time::Duration::from_millis(100),
+                Control::recv_msg(&mut rx),
+            )
+            .await;
+            assert!(result.unwrap().is_err());
+        }
+    }
+
+    #[tokio::test]
+    async fn real_control_messages_round_trip_and_malformed_payload_fails() {
+        for msg in [
+            ControlMsg::RegisterEndpoint {
+                endpoint_id: u16::MAX,
+            },
+            ControlMsg::EndpointRegistered { endpoint_id: 2 },
+            ControlMsg::Ready { endpoint_id: 4 },
+        ] {
+            let body = rmp_serde::to_vec(&msg).unwrap();
+            let mut wire = (body.len() as u32).to_be_bytes().to_vec();
+            wire.extend(body);
+            assert!(
+                Control::recv_msg(&mut wire.as_slice())
+                    .await
+                    .unwrap()
+                    .is_some()
+            );
+        }
+        assert!(
+            Control::recv_msg(&mut [0, 0, 0, 1, 0xc1].as_slice())
+                .await
+                .is_err()
+        );
     }
 }

@@ -59,6 +59,94 @@ pub struct CodecPacketHeader {
 pub struct MediaPacket {
     pub header: MediaPacketHeader,
     pub payload: Bytes,
+    serialized: Option<Bytes>,
+}
+
+impl MediaPacket {
+    pub fn new(header: MediaPacketHeader, payload: Bytes) -> Self {
+        Self {
+            header,
+            payload,
+            serialized: None,
+        }
+    }
+
+    /// Copy borrowed payload pieces once into an owned, fully framed object.
+    /// Subsequent queue/FEC handoffs retain this allocation unchanged.
+    pub fn from_slices(mut header: MediaPacketHeader, pieces: &[&[u8]]) -> Result<Self> {
+        let size = pieces
+            .iter()
+            .try_fold(0usize, |n, piece| n.checked_add(piece.len()))
+            .and_then(|n| u32::try_from(n).ok())
+            .ok_or_else(|| {
+                std::io::Error::new(ErrorKind::InvalidInput, "media payload too large")
+            })?;
+        if header.pts >= (1u64 << 61) {
+            return Err(std::io::Error::new(
+                ErrorKind::InvalidInput,
+                "media timestamp too large",
+            ));
+        }
+        header.size = size;
+        let mut wire = BytesMut::with_capacity(AVPacketHeader::SERIALIZED_SIZE + size as usize);
+        wire.extend_from_slice(&header.serialize());
+        for piece in pieces {
+            wire.extend_from_slice(piece);
+        }
+        let wire = wire.freeze();
+        Ok(Self {
+            header,
+            payload: wire.slice(AVPacketHeader::SERIALIZED_SIZE..),
+            serialized: Some(wire),
+        })
+    }
+
+    /// Serialize without copying when the original header/payload are intact.
+    /// Public header/payload edits remain supported and cannot reuse stale bytes.
+    pub fn into_serialized(self) -> Bytes {
+        let header = self.header.serialize();
+        if let Some(wire) = self.serialized {
+            if wire.len() == header.len() + self.payload.len()
+                && wire[header.len()..].as_ptr() == self.payload.as_ptr()
+                && wire[..header.len()] == header
+            {
+                return wire;
+            }
+        }
+        let mut wire = BytesMut::with_capacity(header.len() + self.payload.len());
+        wire.extend_from_slice(&header);
+        wire.extend_from_slice(&self.payload);
+        wire.freeze()
+    }
+}
+
+#[cfg(test)]
+mod owned_media_tests {
+    use super::*;
+
+    #[test]
+    fn framed_payload_is_owned_and_reused_but_mutations_are_reserialized() {
+        let header = MediaPacketHeader {
+            is_config: false,
+            is_key: true,
+            pts: 90_000,
+            size: 0,
+        };
+        let mut source = vec![0x55; 1024 * 1024];
+        let packet = MediaPacket::from_slices(header.clone(), &[b"metadata", &source]).unwrap();
+        let address = packet.payload.as_ptr();
+        source.fill(0);
+        let wire = packet.into_serialized();
+        assert_eq!(wire[12..].as_ptr(), address);
+        assert!(wire[20..].iter().all(|b| *b == 0x55));
+        let mut changed = MediaPacket::from_slices(header, &[b"old"]).unwrap();
+        changed.payload = Bytes::from_static(b"new");
+        changed.header.pts = 100_000;
+        let expected = changed.header.serialize();
+        let updated = changed.into_serialized();
+        assert_eq!(&updated[..12], &expected);
+        assert_eq!(&updated[12..], b"new");
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -235,10 +323,7 @@ impl super::Serializable for AVPacket {
 
                 reader.read_exact(&mut buf).await?;
 
-                AVPacket::Media(MediaPacket {
-                    header,
-                    payload: buf.freeze(),
-                })
+                AVPacket::Media(MediaPacket::new(header, buf.freeze()))
             }
             AVPacketHeader::Codec(header) => AVPacket::Codec(CodecPacket { header }),
             AVPacketHeader::Hole(header) => AVPacket::Hole(HolePacket { header }),
