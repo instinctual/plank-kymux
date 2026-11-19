@@ -152,6 +152,7 @@ impl ConnectionDriver for WTransportConnectionDriver {
         ConnectionStats {
             rtt: Some(stats.path.rtt),
             packets_lost: Some(stats.path.lost_packets),
+            udp_receive_buffer: None,
         }
     }
 }

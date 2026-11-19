@@ -48,6 +48,7 @@ pub struct CommonServerOptions {
 /// on the same port, dispatching based on negotiated ALPN.
 pub struct CommonServer {
     quinn_endpoint: Arc<quinn::Endpoint>,
+    receive_buffer: crate::UdpReceiveBuffer,
 }
 
 impl CommonServer {
@@ -105,6 +106,8 @@ impl CommonServer {
         let domain = Domain::for_address(addr);
         let socket = Socket::new(domain, Type::DGRAM, Some(Protocol::UDP))
             .map_err(|e| ConnectionError(format!("Socket creation failed: {e:?}")))?;
+        let receive_buffer = super::udp_socket::configure_receive_buffer(&socket)
+            .map_err(|e| ConnectionError(format!("Socket receive-buffer query failed: {e}")))?;
 
         if addr.is_ipv6()
             && let Err(e) = socket.set_only_v6(false)
@@ -133,6 +136,7 @@ impl CommonServer {
 
         Ok(Self {
             quinn_endpoint: Arc::new(quinn_endpoint),
+            receive_buffer,
         })
     }
 
@@ -189,9 +193,9 @@ impl super::Server for CommonServer {
 
         // Native QUIC connection using KYMUX_ALPN.
         let quinn_connection = quinn_connecting.await.map_err(handshake_error)?;
-        Ok(Some(Connection::new(QuinnConnectionDriver::wrap(
-            quinn_connection,
-        ))))
+        Ok(Some(Connection::new(
+            QuinnConnectionDriver::with_receive_buffer(quinn_connection, self.receive_buffer),
+        )))
     }
 
     fn close(&self, error_code: u32, reason: &str) {

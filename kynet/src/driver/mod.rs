@@ -28,6 +28,8 @@ use bytes::Bytes;
 
 #[cfg(all(feature = "kynet-quinn", not(target_family = "wasm")))]
 pub(crate) mod quinn;
+#[cfg(all(feature = "kynet-quinn", not(target_family = "wasm")))]
+mod udp_socket;
 #[cfg(all(feature = "quinn-telemetry", not(target_family = "wasm")))]
 mod quinn_telemetry;
 #[cfg(all(feature = "kynet-quinn", target_family = "wasm"))]

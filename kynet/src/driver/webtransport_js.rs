@@ -314,6 +314,7 @@ impl ConnectionDriver for WebTransportJSConnectionDriver {
         ConnectionStats {
             rtt: None,
             packets_lost: None,
+            udp_receive_buffer: None,
         }
     }
 }

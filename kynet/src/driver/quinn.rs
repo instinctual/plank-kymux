@@ -116,11 +116,25 @@ pub struct QuinnClientOptions {
 #[derive(Debug)]
 pub(crate) struct QuinnConnectionDriver {
     conn: quinn::Connection,
+    receive_buffer: Option<crate::UdpReceiveBuffer>,
 }
 
 impl QuinnConnectionDriver {
     pub(crate) fn wrap(conn: quinn::Connection) -> Self {
-        Self { conn }
+        Self {
+            conn,
+            receive_buffer: None,
+        }
+    }
+
+    pub(crate) fn with_receive_buffer(
+        conn: quinn::Connection,
+        receive_buffer: crate::UdpReceiveBuffer,
+    ) -> Self {
+        Self {
+            conn,
+            receive_buffer: Some(receive_buffer),
+        }
     }
 
     pub async fn connect(
@@ -183,6 +197,7 @@ impl QuinnConnectionDriver {
             Type::DGRAM,
             Some(Protocol::UDP),
         )?;
+        let receive_buffer = super::udp_socket::configure_receive_buffer(&socket)?;
         if bind_addr.is_ipv6()
             && let Err(error) = socket.set_only_v6(false)
         {
@@ -208,7 +223,10 @@ impl QuinnConnectionDriver {
             .connect_with(config, addr, server_name)?
             .await
             .map_err(handshake_error)?;
-        Ok(Connection::new(Self::wrap(conn)))
+        Ok(Connection::new(Self::with_receive_buffer(
+            conn,
+            receive_buffer,
+        )))
     }
 }
 
@@ -296,6 +314,7 @@ impl ConnectionDriver for QuinnConnectionDriver {
         ConnectionStats {
             rtt: Some(stats.path.rtt),
             packets_lost: Some(stats.path.lost_packets),
+            udp_receive_buffer: self.receive_buffer,
         }
     }
 }

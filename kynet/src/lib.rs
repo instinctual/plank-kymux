@@ -185,9 +185,17 @@ impl Connection {
 }
 
 #[derive(Debug, Copy, Clone)]
+pub struct UdpReceiveBuffer {
+    pub requested_bytes: usize,
+    /// Actual SO_RCVBUF result, including Linux's doubled accounting allowance.
+    pub reported_bytes: usize,
+}
+
+#[derive(Debug, Copy, Clone)]
 pub struct ConnectionStats {
     pub rtt: Option<Duration>,
     pub packets_lost: Option<u64>,
+    pub udp_receive_buffer: Option<UdpReceiveBuffer>,
 }
 
 #[derive(Debug)]
